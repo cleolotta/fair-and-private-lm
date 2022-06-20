@@ -1,0 +1,1 @@
+All language adapters you trained and want to load and use again in future experiments should be stored here.
