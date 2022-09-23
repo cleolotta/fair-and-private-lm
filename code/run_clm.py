@@ -633,8 +633,6 @@ def main():
         if accelerator.is_local_main_process:
             print(f"training epoch {epoch}")
         for step, batch in enumerate(train_dataloader):
-           # print('line 679')
-            #print(batch)
             outputs = model(**batch)
             loss = outputs.loss
             loss = loss / args.gradient_accumulation_steps
@@ -652,8 +650,6 @@ def main():
                         model.eval()
                         losses = []
                         for step, batch in enumerate(eval_dataloader):
-                            #print('line 698')
-                            #print(batch)
                             with torch.no_grad():
                                 outputs = model(**batch)
 
@@ -699,8 +695,6 @@ def main():
             
         for step, batch in enumerate(eval_dataloader):
             with torch.no_grad():
-                #print('line 750')
-                #print(batch)
                 outputs = model(**batch)
                 
 
@@ -712,8 +706,6 @@ def main():
             #evaluate on not-augmented dataset
             for step, batch in enumerate(mia_eval_dataloader):            
                 with torch.no_grad():
-                    #print('line 762')
-                    #print(batch)
                     outputs_ref =model_ref(**batch)
                 loss_ref = outputs_ref.loss
                 losses_ref.append(accelerator.gather(loss_ref.repeat(args.per_device_eval_batch_size)))
@@ -777,8 +769,6 @@ def main():
             
         for step, batch in enumerate(train_dataloader):
             with torch.no_grad():
-                #print('line 827')
-                #print(batch)
                 outputs = model(**batch)
 
             loss = outputs.loss
@@ -788,8 +778,6 @@ def main():
         if args.do_ref_model:
             for step, batch in enumerate(mia_train_dataloader):
                 with torch.no_grad():
-                    #print('line 838')
-                    #print(batch)
                     outputs_ref =model_ref(**batch)
                 loss_ref = outputs_ref.loss
                 losses_ref.append(accelerator.gather(loss_ref.repeat(args.per_device_train_batch_size)))
