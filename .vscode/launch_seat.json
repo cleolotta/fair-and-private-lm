@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+
+
+        {
+            "name": "Python: Aktuelle Datei",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "env": { "PYTHONPATH": "${workspaceRoot}"},
+            "cwd": "${workspaceRoot}",
+            "console": "integratedTerminal",
+            "args": ["--tests", "sent-weat6", "--parametric", "--model_name_or_path", "gpt2-medium", "--load_path", "C:/Users/cmatz/master-thesis/fair-and-private-lm/debiasing/ft_gpt2-medium_dp_5epochs/model/best", "--model", "DPGPT2Model", "--bias_type", "gender"] 
+
+        },
+    ]
+}

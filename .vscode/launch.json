@@ -1,0 +1,16 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+
+        {
+            "name": "Python: Aktuelle Datei",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "env": { "PYTHONPATH": "${workspaceRoot}"},
+            "cwd": "${workspaceRoot}",
+            "console": "integratedTerminal",
+            "args": ["--objective", "dp","--model_name_or_path", "gpt2-medium", "--train_file", "test_train.txt", "--validation_file", "test_test.txt", "--mia_train_file", "test_train.txt", "--mia_validation_file", "test_test.txt","--block_size", "512", "--output_dir", "C:/Users/cmatz/master-thesis/fair-and-private-lm/test", "--eval_steps", "1000", "--learning_rate", "1e-5", "--do_ref_model", "--per_device_eval_batch_size", "1", "--gradient_accumulation_steps", "8", "--num_train_epochs", "3", "--lora_dim", "4", "--lora_alpha", "32","--lora_dropout", "0.0", "--per_sample_max_grad_norm", "1.0", "--target_epsilon", "8"]
+        }
+    ]
+}

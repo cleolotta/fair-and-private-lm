@@ -1,0 +1,16 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+
+        {
+            "name": "Python: Aktuelle Datei",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "env": { "PYTHONPATH": "${workspaceRoot}"},
+            "cwd": "${workspaceRoot}",
+            "console": "integratedTerminal",
+            "args": ["--output_file", "./data-prep/datasets/augmented_data3.txt", "--output_file1", "./data-prep/datasets/original_data3.txt", "--skip_sentences", "50", "--block_size", "128"]
+        }
+    ]
+}
