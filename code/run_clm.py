@@ -824,6 +824,10 @@ def main():
             else:
                 print(f"{guess_cor/len(losses)}\n{perplexity}\n{perplexity_train}")
             print("_____")
+            if args.objective == "dp" or args.objective == "dp_cda":
+                eps, alpha = optimizer.privacy_engine.get_privacy_spent(1.0/len(train_dataset))
+                print("End of epoch {}, we have epsilon {} for alpha {} from privacy engine".format(epoch, eps, alpha))
+            
 
     model.eval()
     losses = []
@@ -925,7 +929,10 @@ def main():
         perplexity_train = math.exp(torch.mean(losses))
     except OverflowError:
         perplexity_train = float("inf")
-
+    if args.objective == "dp" or args.objective == "dp_cda":
+        eps_rdp, alpha = privacy_engine.get_privacy_spent(1.0/len(train_dataset))
+        print(f"end of training epsilon privacy engine: {eps_rdp}") # dp-transformers
+    
     if accelerator.is_local_main_process:
         if args.do_ref_model:
             print("correct cnt  ref is: " , guess_cor_ref, "all is: ", len(losses), "ratio is: ", guess_cor_ref/len(losses))
