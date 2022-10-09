@@ -1,0 +1,16 @@
+accelerate==0.12.0
+datasets==1.18.4
+dp_transformers==0.1.0
+huggingface_hub==0.8.1
+matplotlib==3.5.3
+nltk==3.7
+numpy==1.23.2
+opacus==0.15.0
+pandas==1.4.3
+scikit_learn==1.1.2
+scipy==1.9.0
+seaborn==0.11.2
+setuptools==63.4.1
+torch==1.9.0+cu111
+tqdm==4.64.0
+transformers==4.22.0.dev0
