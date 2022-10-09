@@ -13,6 +13,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+# for dp_cda and cda
 """
 Fine-tuning the library models for causal language modeling (GPT, GPT-2, CTRL, ...)
 on a text file or a dataset without using HuggingFace Trainer.
@@ -21,7 +22,8 @@ Here is the full list of checkpoints on the hub that can be fine-tuned by this s
 https://huggingface.co/models?filter=text-generation
 """
 # You can also adapt this script on your own causal language modeling task. Pointers for this are left as comments.
-
+import opacus
+from opacus.utils.module_modification import convert_batchnorm_modules
 import argparse
 from enum import unique
 import logging
@@ -34,7 +36,6 @@ import copy
 from sys import path
 import sys
 from utils import Logger
-
 import dp_transformers
 import datasets
 import torch
@@ -62,6 +63,7 @@ from transformers import (
 
 #from torch import AdamW
 from transformers.utils.versions import require_version
+from transformers.testing_utils import CaptureLogger
 import datasets
 from datasets import load_dataset
 from random import shuffle
@@ -71,6 +73,8 @@ from transformers import GPT2Tokenizer, GPT2LMHeadModel
 import csv
 from scipy.stats import skewnorm
 from scipy.stats import kstest
+from dp_transformers.layers.dp_merged_linear import mark_only_lora_as_trainable
+from dp_transformers.module_modification import convert_gpt2_attention_to_lora
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda:0" if use_cuda else "cpu")
 transformers.logging.set_verbosity_error()
@@ -114,15 +118,10 @@ def parse_args():
         "--validation_file", type=str, default=None, help="A csv or a json file containing the validation data."
     )
     parser.add_argument(
-        "--mia_train_file", type=str, default=None, help="A csv or a json file containing the train data for the mia."
+        "--mia_train_file", type=str, default=None, help="A csv or a json file containing the train data that is used to calculate the loss for the mia."
     )
     parser.add_argument(
-        "--mia_validation_file", type=str, default=None, help="A csv or a json file containing the validation data for the mia."
-    )
-    parser.add_argument(
-        "--validation_split_percentage",
-        default=5,
-        help="The percentage of the train set used as validation set in case there's no validation split",
+        "--mia_validation_file", type=str, default=None, help="A csv or a json file containing the validation data that is used to calculate the loss for the mia."
     )
     parser.add_argument(
         "--model_name_or_path",
@@ -153,15 +152,9 @@ def parse_args():
         help="If passed, will use a slow tokenizer (not backed by the 🤗 Tokenizers library).",
     )
     parser.add_argument(
-        "--add_adapter",
+        "--add_dp",
         action="store_true",
-        help="whether to add adapter or not",
-    )
-    parser.add_argument(
-        "--adapter_reduction",
-        type=int,
-        default=None,
-        help="whether to add adapter or not",
+        help="If passed, will add differential privacy to model",
     )
     parser.add_argument(
         "--per_device_train_batch_size",
@@ -243,12 +236,14 @@ def parse_args():
         "--hub_model_id", type=str, help="The name of the repository to keep in sync with the local `output_dir`."
     )
     parser.add_argument("--hub_token", type=str, help="The token to use to push to the Model Hub.")
-    parser.add_argument("--add_canary", action="store_true", help = "If true, then add canaries in the dataset.")
-    parser.add_argument("--canary_rep", default=None, type = int, help = "The repetition of each canary")
-    parser.add_argument("--canary_len", default = 5, type = int, help = "The len of digit of canaries")
     parser.add_argument("--train_head_only",action="store_true", help = "If true, freeze all the layers except the head of the model.")
     parser.add_argument("--train_layer_n_only",default=None, type=int,  help = "If true, freeze all the layers except the n'th layer of the model.")
- 
+    parser.add_argument("--lora_dim", default=0, type=int,  help= "LoRA dimension; 0 means LoRA is disabled")
+    parser.add_argument("--lora_dropout", default=0.0, type=float,  help= "Dropout probability for LoRA layers")
+    parser.add_argument('--lora_alpha', default=32, type=int,  help="LoRA attention alpha")
+    parser.add_argument('--per_sample_max_grad_norm', default=0.0, type=float)
+    parser.add_argument('--noise_multiplier', default=None, type=float)
+    parser.add_argument('--objective', default=None, type=str)
     args = parser.parse_args()
 
     # Sanity checks
@@ -267,54 +262,8 @@ def parse_args():
         if args.mia_validation_file is not None:
             extension = args.mia_validation_file.split(".")[-1]
             assert extension in ["csv", "json", "txt"], "`mia_validation_file` should be a csv, json or txt file."
-
- 
     return args
 
-def get_exposure(fitting, main):
-
-    fitting_params = skewnorm.fit(fitting)
-    ks = kstest(fitting, 'skewnorm', fitting_params)
-
-    cdf = skewnorm.cdf(main, fitting_params[0], fitting_params[1], fitting_params[2])
-
-    
-    if cdf == 0.0:
-        exposure = 0.0
-    else:
-        exposure = -1.0*np.log2(cdf)
-    
-    
-    return exposure
-
-def get_fit_canary_loss(model,fitting_id, main_id):
-    loss_list = []
-    for k, v in main_id.items():
-            main_id[k] = torch.tensor(v).cuda()
-                  
-    loss_main = np.exp(model(**main_id)['loss'].item())
-
-    for sample in fitting_id:
-        for k, v in sample.items():
-            sample[k] = torch.tensor(v).cuda()
-        
-        output = model(**sample)
-        loss_list.append(np.exp(output.loss.item()))
-
-    return loss_main,loss_list
-
-def gen_canary(canary_len,tokenizer):
-        raw_sample = random.choices([str(i) for i in range(10)], k=canary_len)
-        raw_sample = " ".join(raw_sample)
-        
-        tokenized = tokenizer.tokenize(raw_sample)
-        ids = tokenizer.convert_tokens_to_ids(tokenized)
-        assert len(ids) == canary_len
-        
-        raw_sample = "the secret number is " + raw_sample
-        toked =  tokenizer(raw_sample)
-        toked['labels'] = toked['input_ids'].copy()
-        return raw_sample, toked
             
 def main():
 
@@ -322,7 +271,7 @@ def main():
     random.seed(args.seed)
 
 
-    folder_name = f"canary_{str(args.canary_rep)}_{str(args.canary_len)}_adapter_{args.add_adapter}_head_{args.train_head_only}_layer_{args.train_layer_n_only}_ref_{args.do_ref_model}_maxlen_{args.block_size}_red_{args.adapter_reduction}_model_{args.model_name_or_path}_lr_{args.learning_rate}_epoch_{args.num_train_epochs}_trba_{args.per_device_train_batch_size}_acc_{args.gradient_accumulation_steps}_evba{args.per_device_eval_batch_size}_data_{args.dataset_name}"
+    folder_name = f"objective_{args.objective}_add_dp_{args.add_dp}_lora_{args.lora_dim}_noise_multiplier_{args.noise_multiplier}_ref_{args.do_ref_model}_maxlen_{args.block_size}_model_{args.model_name_or_path}_lr_{args.learning_rate}_epoch_{args.num_train_epochs}_trba_{args.per_device_train_batch_size}_acc_{args.gradient_accumulation_steps}_evba{args.per_device_eval_batch_size}"
     
     directory = "{}/{}".format(args.output_dir,folder_name)
     if not os.path.exists(directory):
@@ -382,8 +331,6 @@ def main():
     # In distributed training, the load_dataset function guarantee that only one local process can concurrently
     # download the dataset.
 
-
-
     data_files = {}
     dataset_args = {}
     if args.train_file is not None:
@@ -399,7 +346,7 @@ def main():
         extension = "text"
         dataset_args["keep_linebreaks"] = not args.no_keep_linebreaks
     raw_datasets = load_dataset(extension, data_files=data_files, **dataset_args)#, cache_dir= "/storage/ukp/work/matzken/fplm/ft_gpt2/cache")
-
+    print(raw_datasets['train']['text'][0])
 
     # See more about loading any type of standard or custom dataset (from files, python dict, pandas DataFrame, etc) at
     # https://huggingface.co/docs/datasets/loading_datasets.html.
@@ -417,19 +364,21 @@ def main():
 #        logger.warning("You are instantiating a new config instance from scratch.")
 
     if args.tokenizer_name:
-        tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name, use_fast=not args.use_slow_tokenizer)
-        tokenizer.pad_token = -100 # Set a dummy pad token we don't use it anyway
+        tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name)#, not args.use_slow_tokenizer, skip_special_tokens = True)
 
     elif args.model_name_or_path:
-        tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=not args.use_slow_tokenizer)
-        tokenizer.pad_token = -100 # Set a dummy pad token we don't use it anyway
+        tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, skip_special_tokens = True)#, add_special_tokens = False)
 
     else:
         raise ValueError(
             "You are instantiating a new tokenizer from scratch. This is not supported by this script."
             "You can do it from another script, save it, and load it from here, using --tokenizer_name."
         )
-
+    
+    # Set padding token.
+    tokenizer.pad_token = tokenizer.eos_token
+    config.pad_token_id = config.eos_token_id
+    
     if args.model_name_or_path:
         model = AutoModelForCausalLM.from_pretrained(
             args.model_name_or_path,
@@ -445,57 +394,46 @@ def main():
     model_ref = copy.deepcopy(model)
 
 
-
-    if args.add_canary:    
-        #if 'ptb' in args.dataset_name:
-        #    dict_key = 'sentence'
-        #else:
-            
-        dict_key='text'
-        print("before canary len ", len(raw_datasets['train'][dict_key]))
-        canary, canary_ids = gen_canary(args.canary_len, tokenizer)
-        for j in range(args.canary_rep):
-            raw_datasets['train']=raw_datasets['train'].add_item({dict_key:canary})
-
-        raw_datasets['train'] = raw_datasets['train'].shuffle(seed=args.seed)
-        print("after canary len ", len(raw_datasets['train'][dict_key]))
-        # save the canaries in csv
-
-        file = open(f'{directory}/canaries.txt', 'w+')
-        file.write(canary)
-        file.write('\n')
-        file.close()
-
-        file = open(f'{directory}/fitting_canaries.txt', 'w+')
-        
-        fitting_canaries_ids = []
-        for i in range(5000):
-            fit , fit_ids = gen_canary(args.canary_len,tokenizer)
-            if fit != canary:
-                fitting_canaries_ids.append(fit_ids)
-                file.write(fit)
-                file.write('\n')
-        print(len(fitting_canaries_ids))
-            
-
-
     # Preprocessing the datasets.
     # First we tokenize all the texts.
     column_names = raw_datasets["train"].column_names
     text_column_name = "text" if "text" in column_names else column_names[0]
 
+    # since this will be pickled to avoid _LazyModule error in Hasher force logger loading before tokenize_function
+    tok_logger = transformers.utils.logging.get_logger(
+        "transformers.tokenization_utils_base"
+    )
+    
+    # Here, we enable line by line read -> https://finisky.github.io/finetunelmlinebyline.en/
     def tokenize_function(examples):
-        return tokenizer(examples[text_column_name])
-
+        # Remove empty lines
+        examples[text_column_name] = [
+            line for line in examples[text_column_name] if len(line) > 0 and not line.isspace()
+        ]
+        tokens = tokenizer(
+            examples[text_column_name],
+            padding='max_length',
+            truncation=True,
+            max_length=args.block_size,
+            # # We use this option because DataCollatorForLanguageModeling (see below) is more efficient when it
+            # # receives the `special_tokens_mask`.
+            #return_special_tokens_mask=True,
+        )
+        tokens['labels'] = tokens['input_ids'].copy()
+        return tokens
+    
+    #raw_text = raw_datasets['train']['text']
+    #tokenized_test = tokenize_function(raw_datasets['train'])
+    
     with accelerator.main_process_first():
         tokenized_datasets = raw_datasets.map(
             tokenize_function,
             batched=True,
             num_proc=args.preprocessing_num_workers,
-            remove_columns=column_names,
+            remove_columns=[text_column_name],
             load_from_cache_file=not args.overwrite_cache,
-            desc="Running tokenizer on dataset",
-        )
+            desc="Running tokenizer on dataset line_by_line",
+        )    
 
     if args.block_size is None:
         block_size = tokenizer.model_max_length
@@ -516,8 +454,7 @@ def main():
     # Main data processing function that will concatenate all texts from our dataset and generate chunks of block_size.
     def group_texts(examples):
         # Concatenate all texts.
-        
-        concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
+        concatenated_examples = {k: sum(examples[k], []) for k in examples.keys()}
         total_length = len(concatenated_examples[list(examples.keys())[0]])
         # We drop the small remainder, we could add padding if the model supported it instead of this drop, you can
         # customize this part to your needs.
@@ -537,72 +474,40 @@ def main():
     #
     # To speed up this part, we use multiprocessing. See the documentation of the map method for more information:
     # https://huggingface.co/docs/datasets/package_reference/main_classes.html#datasets.Dataset.map
-
-    with accelerator.main_process_first():
-        lm_datasets = tokenized_datasets.map(
-            group_texts,
-            batched=True,
-            num_proc=args.preprocessing_num_workers,
-            load_from_cache_file=not args.overwrite_cache,
-            desc=f"Grouping texts in chunks of {block_size}",
-        )
-
+    #group_texts(tokenized_datasets['train']['text'])
+    #with accelerator.main_process_first():
+    #    lm_datasets = tokenized_datasets.map(
+    #        group_texts,
+    #        batched=True,
+    #        num_proc=args.preprocessing_num_workers,
+    #        load_from_cache_file=not args.overwrite_cache,
+    #        desc=f"Grouping texts in chunks of {block_size}",
+    #    )
+    
+    lm_datasets = tokenized_datasets
+    
+    # Here, we take the not augmented dataset as data for the membership inference attack
     train_dataset = lm_datasets["train"]
     eval_dataset = lm_datasets["validation"]
     mia_train_dataset = lm_datasets["mia_train"]
-    mia_eval_dataset = lm_datasets["mia_validation"]
-    
-    
-    #for i in range(len(train_dataset)):
-    #    print(tokenizer.decode(train_dataset[i]['labels']))
-    
-    #exit()
+    mia_eval_dataset = lm_datasets["mia_validation"]   
 
-    tokenizer.pad_token = tokenizer.eos_token
-    data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
+    logger.info("*** raw_datasets/tokenized_datasets " + str(raw_datasets['train'].shape) + " / " + str(tokenized_datasets['train'].shape))
+    logger.info("*** train_dataset shape: " + str(train_dataset[0].keys()) + "/" + str(train_dataset.shape) + "/" + str(len(train_dataset['input_ids'][0])))
 
-    # Log a few random samples from the training set:
-    #for index in random.sample(range(len(train_dataset)), 3):
-    #    logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
-
-    # DataLoaders creation:
-    train_dataloader = DataLoader(
-        train_dataset, shuffle=True, collate_fn=default_data_collator, batch_size=args.per_device_train_batch_size
-    )
-    eval_dataloader = DataLoader(
-        eval_dataset, collate_fn=default_data_collator, batch_size=args.per_device_eval_batch_size
-    )
-    mia_train_dataloader = DataLoader(
-        mia_train_dataset, collate_fn=default_data_collator, batch_size=args.per_device_train_batch_size
-    )
-    mia_eval_dataloader = DataLoader(
-        mia_eval_dataset, collate_fn=default_data_collator, batch_size=args.per_device_eval_batch_size
-    )
-
-    if args.train_head_only:
-        for params in model.parameters():
-            params.requires_grad = False
-
-        for param in model.lm_head.parameters():
-            param.requires_grad = True
+    # for differential privacy:
+    if args.add_dp:
+        if args.lora_dim > 0:
+            model = convert_gpt2_attention_to_lora(
+                model, r=args.lora_dim, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout,
+                enable_lora=[True, False, True], merge_weights=False
+            )
+            mark_only_lora_as_trainable(model)
+            if args.lora_dim > 0:
+                dp_transformers.register_grad_sampler_gpt2_lora()
+            else:
+                dp_transformers.register_grad_sampler_gpt2()
         
-    elif args.train_layer_n_only is not None:
-        n = args.train_layer_n_only
-        k = 0
-        for params in model.parameters():
-                params.requires_grad = False
-        
-        for params in model.transformer.h[n].parameters():
-                params.requires_grad = True
-
-                
-    
-    #print(model.lm_head)    
-    if accelerator.is_local_main_process:
-        print("model_params (million)", count_parameters(model)/1000000)
-
-
-
     # Split weights in two groups, one with weight decay and the other not.
     no_decay = ["bias", "LayerNorm.weight"]
     optimizer_grouped_parameters = [
@@ -616,26 +521,81 @@ def main():
         },
     ]
     optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate)
+    #print("------------------------------------ make sure the layers are frozen ---------------------------------------------------------------")
+    #for params in model.parameters():
+    #    print(params.requires_grad)
+    #print("----------------------------- make sure the layers of ref model are not frozen -----------------------------------------------------")
+    #for params in model_ref.parameters():
+    #    print(params.requires_grad)
 
-
-
-
-
-    # Prepare everything with our `accelerator`.
-    model, optimizer, train_dataloader, eval_dataloader, mia_train_dataloader, mia_eval_dataloader = accelerator.prepare(
-        model, optimizer, train_dataloader, eval_dataloader, mia_train_dataloader, mia_eval_dataloader
-    )
-    print(model.device)
-    model_ref = accelerator.prepare(
-        model_ref
-    )
+    
     # On TPU, the tie weights in our model have been disconnected, so we need to restore the ties.
     if accelerator.distributed_type == DistributedType.TPU:
         model.tie_weights()
 
     # Note -> the training dataloader needs to be prepared before we grab his length below (cause its length will be
     # shorter in multiprocess)
+    
+    # DataLoaders creation:
+    train_dataloader = DataLoader(
+        train_dataset, collate_fn=default_data_collator, batch_size=args.per_device_train_batch_size
+    )
+    eval_dataloader = DataLoader(
+        eval_dataset, collate_fn=default_data_collator, batch_size=args.per_device_eval_batch_size
+    )
+    mia_train_dataloader = DataLoader(
+        mia_train_dataset, collate_fn=default_data_collator, batch_size=args.per_device_train_batch_size
+    )
+    mia_eval_dataloader = DataLoader(
+        mia_eval_dataset, collate_fn=default_data_collator, batch_size=args.per_device_eval_batch_size
+    )
+    if args.train_head_only:
+        for params in model.parameters():
+            params.requires_grad = False
 
+        for param in model.lm_head.parameters():
+            param.requires_grad = True
+    
+    
+    elif args.train_layer_n_only is not None:
+        n = args.train_layer_n_only
+        k = 0
+        for params in model.parameters():
+                params.requires_grad = False
+        
+        for params in model.transformer.h[n].parameters():
+                params.requires_grad = True
+    
+    # Prepare everything with our `accelerator`.
+    model, optimizer, train_dataloader, eval_dataloader, mia_train_dataloader, mia_eval_dataloader = accelerator.prepare(
+        model, optimizer, train_dataloader, eval_dataloader, mia_train_dataloader, mia_eval_dataloader
+    )
+
+    model_ref = accelerator.prepare(
+        model_ref
+    )
+         
+    # for privacy objective:
+    if args.add_dp:
+        model = model.train()
+        sampling_probability = args.per_device_train_batch_size*accelerator.num_processes*args.gradient_accumulation_steps/len(train_dataset)
+        num_steps = int(args.num_train_epochs*(1/sampling_probability+1))
+        if args.noise_multiplier is None: 
+            noise_multiplier = dp_transformers.dp_utils.find_noise_multiplier(
+            sampling_probability=sampling_probability,
+            num_steps=num_steps,
+            target_delta=1.0/len(train_dataset),
+            target_epsilon=args.target_epsilon
+        )
+        else:
+            noise_multiplier = args.noise_multiplier
+        # enter PrivacyEngine
+        privacy_engine = opacus.PrivacyEngine(module=model,
+            batch_size=args.per_device_train_batch_size*args.gradient_accumulation_steps, sample_size=len(train_dataset),
+            max_grad_norm=1.0, noise_multiplier=noise_multiplier, target_delta=1.0/len(train_dataset)
+        ) # default values from https://github.com/microsoft/dp-transformers
+        privacy_engine.attach(optimizer)
+    
     # Scheduler and math around the number of training steps.
     num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
     if args.max_train_steps is None:
@@ -660,8 +620,8 @@ def main():
 
 
     logger.info("***** Running training *****")
-    logger.info(f"  Num examples = {len(train_dataset)}")
     logger.info(f"  Num mia examples = {len(mia_train_dataset)}")
+    logger.info(f"  Num examples = {len(train_dataset)}")
     logger.info(f"  Num Epochs = {args.num_train_epochs}")
     logger.info(f"  Instantaneous batch size per device = {args.per_device_train_batch_size}")
     logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
@@ -676,8 +636,7 @@ def main():
         if accelerator.is_local_main_process:
             print(f"training epoch {epoch}")
         for step, batch in enumerate(train_dataloader):
-            print('line 679')
-            print(batch)
+            print(tokenizer.decode(batch['input_ids'][0]))
             outputs = model(**batch)
             loss = outputs.loss
             loss = loss / args.gradient_accumulation_steps
@@ -689,14 +648,10 @@ def main():
                 progress_bar.update(1)
                 completed_steps += 1
 
-        
-                
                 if completed_steps % args.eval_steps == 0:
                         model.eval()
                         losses = []
                         for step, batch in enumerate(eval_dataloader):
-                            print('line 698')
-                            print(batch)
                             with torch.no_grad():
                                 outputs = model(**batch)
 
@@ -735,36 +690,25 @@ def main():
         if accelerator.is_local_main_process:
             print(f"*************end of epoch {epoch} eval ")
         
-        if args.add_canary:
-            print("running canary eval")
-            canary_loss, fitting_loss = get_fit_canary_loss(model,fitting_canaries_ids,canary_ids)        
-            exposure = get_exposure(fitting_loss,canary_loss)
-            print(exposure)
         
         if args.do_ref_model:
             model_ref.eval()
             losses_ref = []
             
-        for step, batch in enumerate(eval_dataloader):
+        for i, (batch1, batch2) in enumerate(zip(eval_dataloader, mia_eval_dataloader)):
             with torch.no_grad():
-                print('line 750')
-                print(batch)
-                outputs = model(**batch)
+                outputs = model(**batch1)
                 
 
             loss = outputs.loss
             losses.append(accelerator.gather(loss.repeat(args.per_device_eval_batch_size)))
         
-        if args.do_ref_model:
-            #evaluate on not-augmented dataset
-            for step, batch in enumerate(mia_eval_dataloader):            
+            if args.do_ref_model:
+            #evaluate reference model on not-augmented dataset
                 with torch.no_grad():
-                    print('line 762')
-                    print(batch)
-                    outputs_ref =model_ref(**batch)
+                    outputs_ref =model_ref(**batch2)
                 loss_ref = outputs_ref.loss
                 losses_ref.append(accelerator.gather(loss_ref.repeat(args.per_device_eval_batch_size)))
-                
             
 
         losses = torch.cat(losses)
@@ -822,26 +766,19 @@ def main():
             model_ref.eval()
             losses_ref = []
             
-        for step, batch in enumerate(train_dataloader):
+        for i, (batch1, batch2) in enumerate(zip(train_dataloader, mia_train_dataloader)):
             with torch.no_grad():
-                print('line 827')
-                print(batch)
-                outputs = model(**batch)
+                outputs = model(**batch1)
 
             loss = outputs.loss
-            
             losses.append(accelerator.gather(loss.repeat(args.per_device_train_batch_size)))
         
-        if args.do_ref_model:
-            for step, batch in enumerate(mia_train_dataloader):
+            if args.do_ref_model:
                 with torch.no_grad():
-                    print('line 838')
-                    print(batch)
-                    outputs_ref =model_ref(**batch)
+                    outputs_ref =model_ref(**batch2)
                 loss_ref = outputs_ref.loss
                 losses_ref.append(accelerator.gather(loss_ref.repeat(args.per_device_train_batch_size)))
-              
-              
+            
         
 
         accelerator.wait_for_everyone()
@@ -878,44 +815,39 @@ def main():
                 ratio = len(mia_train_dataset)/len(mia_eval_dataset)
                 guess_cor_subsampled = sum([1 for sample in losses[::int(ratio)] if sample<threshold])
                 guess_cor_ref_subsampled =  sum([1 for sample in lr_rat[::int(ratio)] if sample<threshold_ref])                
-                print(f"{guess_cor_ref_subsampled/(len(lr_rat[::int(ratio)]))}\n{guess_cor_subsampled/len(losses[::int(ratio)])}\n{guess_cor_ref_subsampled/(guess_cor_ref_subsampled+int(0.1*len(eval_dataset)))}\n{guess_cor_subsampled/(guess_cor_subsampled+int(0.1*len(mia_eval_dataset)))}")
+                print(f"{guess_cor_ref_subsampled/(len(lr_rat[::int(ratio)]))}\n{guess_cor_subsampled/len(losses[::int(ratio)])}\n{guess_cor_ref_subsampled/(guess_cor_ref_subsampled+int(0.1*len(mia_eval_dataset)))}\n{guess_cor_subsampled/(guess_cor_subsampled+int(0.1*len(mia_eval_dataset)))}")
 
             else:
                 print(f"{guess_cor/len(losses)}\n{perplexity}\n{perplexity_train}")
             print("_____")
+        if args.add_dp:
+            eps, alpha = optimizer.privacy_engine.get_privacy_spent(1.0/len(train_dataset))
+            print("End of epoch {}, we have epsilon {} for alpha {} from privacy engine".format(epoch, eps, alpha))
 
     model.eval()
     losses = []
     if accelerator.is_local_main_process:
         print(f"*************end of training ")
     
-    if args.add_canary:
-            print("running canary eval")
-            canary_loss, fitting_loss = get_fit_canary_loss(model,fitting_canaries_ids,canary_ids)        
-            exposure = get_exposure(fitting_loss,canary_loss)
-            print(exposure)    
-    
     if args.do_ref_model:
         model_ref.eval()
         losses_ref = []
         
-    for step, batch in enumerate(eval_dataloader):
+    for i, (batch1, batch2) in enumerate(zip(eval_dataloader, mia_eval_dataloader)):
         with torch.no_grad():
-            outputs = model(**batch)
+            outputs = model(**batch1)
             
 
         loss = outputs.loss
         losses.append(accelerator.gather(loss.repeat(args.per_device_eval_batch_size)))
         
-    if args.do_ref_model:
-        for step, batch in enumerate(mia_eval_dataloader):
+        if args.do_ref_model:
             with torch.no_grad():
-                outputs_ref =model_ref(**batch)
+                outputs_ref =model_ref(**batch2)
             loss_ref = outputs_ref.loss
             losses_ref.append(accelerator.gather(loss_ref.repeat(args.per_device_eval_batch_size)))
-            
-        
-
+    
+    
     losses = torch.cat(losses)
     losses = losses[: len(eval_dataset)]
     
@@ -941,35 +873,28 @@ def main():
     except OverflowError:
         perplexity = float("inf")
     
-
-    
-        
     #run threshold on training samples
     losses = []
     if args.do_ref_model:
         model_ref.eval()
         losses_ref = []
         
-    for step, batch in enumerate(train_dataloader):
+    for i, (batch1, batch2) in enumerate(zip(train_dataloader, mia_train_dataloader)):
         with torch.no_grad():
-            outputs = model(**batch)
+            outputs = model(**batch1)
 
         loss = outputs.loss
         losses.append(accelerator.gather(loss.repeat(args.per_device_train_batch_size)))
         
-    if args.do_ref_model:
-        for step, batch in enumerate(mia_train_dataloader):
+        if args.do_ref_model:
             with torch.no_grad():
-                outputs_ref =model_ref(**batch)
+                outputs_ref =model_ref(**batch2)
             loss_ref = outputs_ref.loss
             losses_ref.append(accelerator.gather(loss_ref.repeat(args.per_device_train_batch_size)))
-                        
-
+        
+    
     accelerator.wait_for_everyone()
-    
     losses = torch.cat(losses)
-
-    
     losses = losses[: len(train_dataset)]
     
     
@@ -990,7 +915,9 @@ def main():
         perplexity_train = math.exp(torch.mean(losses))
     except OverflowError:
         perplexity_train = float("inf")
-
+    if args.add_dp:
+        eps_rdp, alpha = privacy_engine.get_privacy_spent(1.0/len(train_dataset))
+        print(f"end of training epsilon privacy engine {eps_rdp}")
     if accelerator.is_local_main_process:
         if args.do_ref_model:
             print("correct cnt  ref is: " , guess_cor_ref, "all is: ", len(losses), "ratio is: ", guess_cor_ref/len(losses))
@@ -998,12 +925,12 @@ def main():
         print(f"end of training perplexity: {perplexity} perplexity_train: {perplexity_train}")
         print("____")
         if args.do_ref_model:
-                print(f"{guess_cor_ref/len(losses)}\n{guess_cor/len(losses)}\n{perplexity}\n{perplexity_train}")
-                ratio = len(mia_train_dataset)/len(mia_eval_dataset)
-                guess_cor_subsampled = sum([1 for sample in losses[::int(ratio)] if sample<threshold])
-                guess_cor_ref_subsampled =  sum([1 for sample in lr_rat[::int(ratio)] if sample<threshold_ref])                
-                print(f"{guess_cor_ref_subsampled/(len(lr_rat[::int(ratio)]))}\n{guess_cor_subsampled/len(losses[::int(ratio)])}\n{guess_cor_ref_subsampled/(guess_cor_ref_subsampled+int(0.1*len(mia_eval_dataset)))}\n{guess_cor_subsampled/(guess_cor_subsampled+int(0.1*len(mia_eval_dataset)))}")
-
+            print(f"{guess_cor_ref/len(losses)}\n{guess_cor/len(losses)}\n{perplexity}\n{perplexity_train}")
+            ratio = len(train_dataset)/len(eval_dataset)
+            guess_cor_subsampled = sum([1 for sample in losses[::int(ratio)] if sample<threshold])
+            guess_cor_ref_subsampled =  sum([1 for sample in lr_rat[::int(ratio)] if sample<threshold_ref])                
+            print(f"{guess_cor_ref_subsampled/(len(lr_rat[::int(ratio)]))}\n{guess_cor_subsampled/len(losses[::int(ratio)])}\n{guess_cor_ref_subsampled/(guess_cor_ref_subsampled+int(0.1*len(eval_dataset)))}\n{guess_cor_subsampled/(guess_cor_subsampled+int(0.1*len(eval_dataset)))}")
+                    
         else:
             print(f"{guess_cor/len(losses)}\n{perplexity}\n{perplexity_train}")
         print("_____")

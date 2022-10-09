@@ -98,18 +98,18 @@ def get_data_exposure(filename,hue,cnt_s = 20,old=False):
     return data_exposure
 
 
-def plot_linear(xlabel,ylabel,title,var,data_mia_aug,data_mia_full,data_mia_dp,f_name):
+def plot_linear(xlabel,ylabel,title,var,data_mia_aug,data_mia_full,f_name):
     plt.figure(figsize=(10, 5))
     ax = sns.lineplot(data=data_mia_aug[var],  palette='Set2',linewidth=2.5)
     ax.set(xlabel=xlabel, ylabel=ylabel, title=title, xticks=[i+1 for i in range(len(data_mia_aug[var]))])
     ax2 = sns.lineplot(data=data_mia_full[var], palette='Set2', linewidth=2.5)
     ax2.set(xlabel=xlabel, ylabel=ylabel, title=title, xticks=[i+1 for i in range(len(data_mia_full[var]))])
-    ax3 = sns.lineplot(data=data_mia_dp[var], palette='Set2', linewidth=2.5)
-    ax3.set(xlabel=xlabel, ylabel=ylabel, title=title, xticks=[i+1 for i in range(len(data_mia_dp[var]))])
+    #ax3 = sns.lineplot(data=data_mia_dp[var], palette='Set2', linewidth=2.5)
+    #ax3.set(xlabel=xlabel, ylabel=ylabel, title=title, xticks=[i+1 for i in range(len(data_mia_dp[var]))])
     #ax4 = sns.lineplot(data=data_mia_dp2[var], palette='Set2', linewidth=2.5)
     #ax4.set(xlabel=xlabel, ylabel=ylabel, title=title, xticks=[i+1 for i in range(len(data_mia_dp2[var]))])
   
-    ax3.legend(title='Fine-tuning Method',labels=['FT with augmented data','FT with not-augmented data', 'FT with DP 5 epochs', 'FT with DP 10 epochs'])
+    ax2.legend(title='Fine-tuning Method',labels=['FT with DP 0.3', 'FT with DP 0.6'])
     
     #plt.savefig(f_name, transparent=True)
 
@@ -146,20 +146,20 @@ def plot_scatter(xlabel,ylabel,title,hue,legendtitle,df_all,f_name,pareto=False,
     plt.show()
     
     
-data_mia_full_augmented = get_data_mia("C:/Users/cmatz/master-thesis/fplm/models/ft_gpt2-medium_mia_aug_trained_5epochs/stdout",hue='Debiased model')
-data_mia_full_original =  get_data_mia("C:/Users/cmatz/master-thesis/fplm/models/ft_gpt2-medium_og_trained_5epochs/stdout", hue = 'Not debiased model')
-data_lora_dp_5 = get_data_mia("C:/Users/cmatz/master-thesis/fplm/models/ft_gpt2-medium_dp_5epochs/stdout", hue = 'DP model')
-data_lora_dp_10 = get_data_mia("C:/Users/cmatz/master-thesis/fplm/models/ft_gpt2-medium_dp_10epochs/stdout", hue = 'DP model 10 epochs')
+data_dp_06 = get_data_mia("./objective_dp_dropout_debias_False_add_dp_True_noise_multiplier_0.6_lora_4_layer_None_ref_True_maxlen_128_model_gpt2-medium_lr_1e-05_epoch_2_trba_1_acc_128_evba1/stdout",hue='dp noise 0.6')
+data_dp_03 =  get_data_mia("./objective_dp_dropout_debias_False_add_dp_True_noise_multiplier_0.3_lora_4_layer_None_ref_True_maxlen_128_model_gpt2-medium_lr_1e-05_epoch_2_trba_1_acc_128_evba1/stdout", hue = 'dp noise 0.3')
+#data_lora_dp_5 = get_data_mia("C:/Users/cmatz/master-thesis/fplm/models/ft_gpt2-medium_dp_5epochs/stdout", hue = 'DP model')
+#data_lora_dp_10 = get_data_mia("C:/Users/cmatz/master-thesis/fplm/models/ft_gpt2-medium_dp_10epochs/stdout", hue = 'DP model 10 epochs')
 
-df_augmented = pd.DataFrame.from_dict(data_mia_full_augmented)[:3]
-df_original = pd.DataFrame.from_dict(data_mia_full_original)[:3]
-df_dp_5 = pd.DataFrame.from_dict(data_lora_dp_5)[:3]
+dp_06= pd.DataFrame.from_dict(data_dp_06)
+dp_03 = pd.DataFrame.from_dict(data_dp_03)
+#df_dp_5 = pd.DataFrame.from_dict(data_lora_dp_5)[:3]
 #df_dp_10 = pd.DataFrame.from_dict(data_lora_dp_10)
 
 
 
 
-df_all= pd.concat([df_augmented, df_original, df_dp_5], axis=0)
+df_all= pd.concat([dp_03, dp_06], axis=0)
 #data_exposure = get_data_exposure('/home/tr33/Documents/efficient_ft/gen/stdout-exposure')    
 
 
@@ -168,7 +168,7 @@ xlabel='Epoch'
 title = 'MIA recall  vs. Epoch'
 var = 'attack1'
 f_name ='mia-epoch.pdf'
-plot_linear(xlabel,ylabel,title,var,df_augmented,df_original, df_dp_5,f_name)
+plot_linear(xlabel,ylabel,title,var,dp_03,dp_06, f_name)
 
 
 

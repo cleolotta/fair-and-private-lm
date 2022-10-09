@@ -7,7 +7,7 @@ def _is_generative(model):
         "CDAGPT2LMHeadModel",
         "DropoutGPT2LMHeadModel",
         "SelfDebiasGPT2LMHeadModel",
-        "DPGPT2Model"
+        "DPGPT2LMHeadModel"
     ]
 
 

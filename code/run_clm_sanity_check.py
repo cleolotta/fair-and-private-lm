@@ -69,6 +69,9 @@ from random import shuffle
 import numpy as np
 import random
 from transformers import GPT2Tokenizer, GPT2LMHeadModel
+import dp_transformers
+from dp_transformers.layers.dp_merged_linear import mark_only_lora_as_trainable
+from dp_transformers.module_modification import convert_gpt2_attention_to_lora
 import csv
 from scipy.stats import skewnorm
 from scipy.stats import kstest
@@ -147,6 +150,11 @@ def parse_args():
         "--do_ref_model",
         action="store_true",
         help="If passed, will use a slow tokenizer (not backed by the 🤗 Tokenizers library).",
+    )
+    parser.add_argument(
+        "--add_dp",
+        action="store_true",
+        help="If passed, will add differential privacy to model",
     )
     parser.add_argument(
         "--per_device_train_batch_size",
@@ -230,9 +238,14 @@ def parse_args():
     parser.add_argument("--hub_token", type=str, help="The token to use to push to the Model Hub.")
     parser.add_argument("--train_head_only",action="store_true", help = "If true, freeze all the layers except the head of the model.")
     parser.add_argument("--train_layer_n_only",default=None, type=int,  help = "If true, freeze all the layers except the n'th layer of the model.")
+    parser.add_argument("--lora_dim", default=0, type=int,  help= "LoRA dimension; 0 means LoRA is disabled")
+    parser.add_argument("--lora_dropout", default=0.0, type=float,  help= "Dropout probability for LoRA layers")
+    parser.add_argument('--lora_alpha', default=32, type=int,  help="LoRA attention alpha")
+    parser.add_argument('--noise_multiplier', default=None, type=float)
+    parser.add_argument('--objective', default=None, type=str)
     parser.add_argument('--per_sample_max_grad_norm', default=0.0, type=float)
-    parser.add_argument('--objective', default=None, type=str)    
-
+    parser.add_argument('--target_epsilon', type=float)
+    parser.add_argument('--dropout_debias', default=False, type=bool)
     args = parser.parse_args()
 
     # Sanity checks
@@ -342,6 +355,16 @@ def main():
 #        config = CONFIG_MAPPING[args.model_type]()
 #        logger.warning("You are instantiating a new config instance from scratch.")
     
+    # Apply increased dropout regularized for debiasing if specified.
+    # We use the hyperparameters specified in: https://arxiv.org/abs/2010.06032.
+    if args.dropout_debias:
+        logger.info(
+            f"Setting dropout hyperparameters for: {args.model_name_or_path}."
+        )
+        config.resid_pdrop = 0.15
+        config.embd_pdrop = 0.15
+        config.attn_pdrop = 0.15
+        
     if args.tokenizer_name:
         tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name, use_fast=not args.use_slow_tokenizer)
 
@@ -441,7 +464,18 @@ def main():
     train_dataset = lm_datasets["train"]
     eval_dataset = lm_datasets["validation"]
 
-    
+    # for differential privacy:
+    if args.add_dp:
+        if args.lora_dim > 0:
+            model = convert_gpt2_attention_to_lora(
+                model, r=args.lora_dim, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout,
+                enable_lora=[True, False, True], merge_weights=False
+            )
+            mark_only_lora_as_trainable(model)
+            dp_transformers.register_grad_sampler_gpt2_lora()
+        else:
+            dp_transformers.register_grad_sampler_gpt2()
+        
             
 
 
@@ -468,10 +502,10 @@ def main():
     # shorter in multiprocess)
     # DataLoaders creation:
     train_dataloader = DataLoader(
-        train_dataset, collate_fn=default_data_collator, batch_size=args.per_device_train_batch_size
+        train_dataset, collate_fn= default_data_collator, batch_size=args.per_device_train_batch_size
     )
     eval_dataloader = DataLoader(
-        eval_dataset, collate_fn=default_data_collator, batch_size=args.per_device_eval_batch_size)
+        eval_dataset, collate_fn= default_data_collator, batch_size=args.per_device_eval_batch_size)
     
     if args.train_head_only:
         for params in model.parameters():
@@ -505,10 +539,30 @@ def main():
         model, optimizer, train_dataloader, eval_dataloader
     )
     print(model.device)
-    model_ref = accelerator.prepare(
-        model_ref
-    )  
-
+    #model_ref = accelerator.prepare(
+    #    model_ref
+    #)  
+    
+    # for privacy objective:
+    if args.add_dp:
+        model = model.train()
+        sampling_probability = args.per_device_train_batch_size*accelerator.num_processes*args.gradient_accumulation_steps/len(train_dataset)
+        num_steps = int(args.num_train_epochs*(1/sampling_probability+1))
+        if args.noise_multiplier is None: 
+            noise_multiplier = dp_transformers.dp_utils.find_noise_multiplier(
+            sampling_probability=sampling_probability,
+            num_steps=num_steps,
+            target_delta=1.0/len(train_dataset),
+            target_epsilon=args.target_epsilon
+        )
+        else:
+            noise_multiplier = args.noise_multiplier
+        # enter PrivacyEngine
+        privacy_engine = opacus.PrivacyEngine(module=model,
+            batch_size=args.per_device_train_batch_size*args.gradient_accumulation_steps, sample_size=len(train_dataset),
+            max_grad_norm=1.0, noise_multiplier=noise_multiplier, target_delta=1.0/len(train_dataset)
+        ) # default values from https://github.com/microsoft/dp-transformers
+        privacy_engine.attach(optimizer)
         
     # On TPU, the tie weights in our model have been disconnected, so we need to restore the ties.
     if accelerator.distributed_type == DistributedType.TPU:
@@ -547,7 +601,6 @@ def main():
     logger.info(f"  Instantaneous batch size per device = {args.per_device_train_batch_size}")
     logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
     logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
-    logger.info(f"  Total optimization steps = {args.max_train_steps}")
     # Only show the progress bar once on each machine.
     progress_bar = tqdm(range(args.max_train_steps), disable=not accelerator.is_local_main_process)
     completed_steps = 0
@@ -618,8 +671,6 @@ def main():
 
         for i, (batch1, batch2) in enumerate(zip(eval_dataloader, eval_dataloader)):
             with torch.no_grad():
-                #print('line 750')
-                #print(batch)
                 outputs = model(**batch1)
                 
 
@@ -755,6 +806,9 @@ def main():
             else:
                 print(f"{guess_cor/len(losses)}\n{perplexity}\n{perplexity_train}")
             print("_____")
+            if args.add_dp:
+                eps, alpha = optimizer.privacy_engine.get_privacy_spent(1.0/len(train_dataset))
+            print("End of epoch {}, we have epsilon {} for alpha {} from privacy engine".format(epoch, eps, alpha))
 
 
     model.eval()
@@ -867,6 +921,9 @@ def main():
         perplexity_train = math.exp(torch.mean(losses))
     except OverflowError:
         perplexity_train = float("inf")
+    if args.add_dp:
+        eps_rdp, alpha = privacy_engine.get_privacy_spent(1.0/len(train_dataset))
+        print(f"end of training epsilon privacy engine {eps_rdp}")
     if accelerator.is_local_main_process:
         if args.do_ref_model:
             print("correct cnt  ref is: " , guess_cor_ref, "all is: ", len(losses), "ratio is: ", guess_cor_ref/len(losses))

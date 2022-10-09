@@ -2,12 +2,14 @@
 import numpy as np 
 import csv
 import argparse
+import tqdm 
+from tqdm import tqdm
 import torch
 from transformers import OpenAIGPTTokenizer, OpenAIGPTLMHeadModel
 from transformers import GPT2Tokenizer, GPT2LMHeadModel
 from scipy.special import softmax
-use_cuda = torch.cuda.is_available()
-device = torch.device("cuda:0" if use_cuda else "cpu")
+cuda = torch.cuda.is_available()
+device = torch.device("cuda:0" if cuda else "cpu")
 
 def get_becpro_english():
         rows = []
@@ -46,7 +48,7 @@ def main():
         #    model = OpenAIGPTLMHeadModel.from_pretrained(model_string)
         model.eval()
         if cuda:
-            model.to('cuda')
+            model.to(device)
         return model, tokenizer
     
     def sent_scoring(model_tokenizer, text, cuda):
@@ -56,7 +58,7 @@ def main():
         assert tokenizer is not None
         input_ids = torch.tensor(tokenizer.encode(text)).unsqueeze(0)  # Batch size 1
         if cuda:
-            input_ids = input_ids.to('cuda')
+            input_ids = input_ids.to(device)
         with torch.no_grad():
             outputs = model(input_ids, labels=input_ids)
         loss, logits = outputs[:2]
@@ -104,4 +106,8 @@ if __name__ == '__main__':
     main()
 
     
-# python ./bias-bench-main/experiments/bias-becpro-gpt2.py --model_name_or_path "C:\Users\cmatz\master-thesis\fair-and-private-lm\debiasing\ft_gpt2-medium_dp_5epochs\model\best" --tokenizer_name_or_path "C:\Users\cmatz\master-thesis\fair-and-private-lm\debiasing\ft_gpt2-medium_dp_5epochs\model\best" --output_file "./bias_evaluation/bec-pro_bias_gpt2-medium-ft-dp.txt"
+# python ./bias-bench-main/experiments/bias-becpro-gpt2.py --model_name_or_path "C:\Users\cmatz\master-thesis\fplm\models\ft_gpt2-medium_dp_5epochs\model\best" --tokenizer_name_or_path "C:\Users\cmatz\master-thesis\fplm\models\ft_gpt2-medium_dp_5epochs\model" --output_file "./bias-bench-main/results/bec-pro/bec-pro_bias_gpt2-medium-ft-dp_5epochs_v2.txt"
+tokenizer = GPT2Tokenizer.from_pretrained("C:/Users/cmatz/master-thesis/fplm/models/ft_gpt2-medium_dp_10epochs/model")
+model = GPT2LMHeadModel.from_pretrained("C:/Users/cmatz/master-thesis/fplm\models/ft_gpt2-medium_dp_10epochs/model/best")
+prob_male = sent_scoring((model,tokenizer), "the nurse is a man", cuda=True)
+prob_femal = sent_scoring((model,tokenizer), "the nurse is a woman", cuda=True)

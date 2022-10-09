@@ -18,7 +18,7 @@ def get_gender_word_pairs():
     # https://github.com/uclanlp/corefBias/blob/master/WinoBias/wino/generalized_swaps.txt
     # creates list with word pairs --> [ [pair1[0], pair1[1]] , [pair2[0], pair2[1]] , ... ]
     #file_wordlist = open('/ukp-storage-1/matzken/fplm/datasets/wordpairs/cda_word_pairs_gender.txt', 'r', encoding="utf-8") 
-    file_wordlist = open('./data-prep/datasets/wordpairs/cda_word_pairs_gender.txt', 'r', encoding="utf-8") 
+    file_wordlist = open('C:/Users/cmatz/master-thesis/fplm/datasets/wordpairs/cda_word_pairs_gender.txt', 'r', encoding="utf-8") 
     
     lines_wordlist = file_wordlist.readlines()
     for line in lines_wordlist:
@@ -29,7 +29,7 @@ def get_gender_word_pairs():
     # https://github.com/uclanlp/corefBias/blob/master/WinoBias/wino/extra_gendered_words.txt
     # appends additional word pairs from extra file
     #file_wordlist = open('/ukp-storage-1/matzken/fplm/datasets/wordpairs/cda_word_pairs_gender_extra.txt', 'r', encoding="utf-8") 
-    file_wordlist = open('./data-prep/datasets/wordpairs/cda_word_pairs_gender_extra.txt', 'r', encoding="utf-8") 
+    file_wordlist = open('C:/Users/cmatz/master-thesis/fplm/datasets/wordpairs/cda_word_pairs_gender_extra.txt', 'r', encoding="utf-8") 
     
     lines_wordlist = file_wordlist.readlines()
     for line in lines_wordlist:
@@ -41,7 +41,7 @@ def get_gender_word_pairs():
     # https://www.ssa.gov/oact/babynames/limits.html
     # gets the top 100 names of 2019 for boys and girls and appends the pairs (male, female) and (female, male) to the word pair list
     #file_wordlist = open('/ukp-storage-1/matzken/fplm/datasets/wordpairs/cda_word_pairs_names.txt', 'r', encoding="utf-8") 
-    file_wordlist = open('./data-prep/datasets/wordpairs/cda_word_pairs_names.txt', 'r', encoding="utf-8") 
+    file_wordlist = open('C:/Users/cmatz/master-thesis/fplm/datasets/wordpairs/cda_word_pairs_names.txt', 'r', encoding="utf-8") 
     
     lines_wordlist = file_wordlist.readlines()
     for line in lines_wordlist:
@@ -62,6 +62,10 @@ if __name__ == '__main__':
                         type=str,
                         required=True,
                         help="The output for the original dataset for the book corpus.")
+    parser.add_argument("--output_file2",
+                        type=str,
+                        required=True,
+                        help="This output serves for the MIA attack - every sentence that has an augmented version in the augmented dataset, is doubled in the original version here so that the data have the same length")
     parser.add_argument("--skip_sentences",
                         type=int,
                         required=True,
@@ -98,8 +102,10 @@ if __name__ == '__main__':
     f.close()
     f1 = open(args.output_file1, "w+") #original 
     f1.close()
+    f2 = open(args.output_file2, "w+")
+    f2.close()
     # open the output text file to append sentence by sentence
-    with open(args.output_file,'a+', encoding='utf-8') as f, open(args.output_file1, 'a+', encoding="utf-8") as f1:
+    with open(args.output_file,'a+', encoding='utf-8') as f, open(args.output_file1, 'a+', encoding="utf-8") as f1, open(args.output_file2,'a+', encoding='utf-8') as f2:
 
 
 # ---------------------------------------------BOOKCORPUS---------------------------------------------
@@ -107,6 +113,7 @@ if __name__ == '__main__':
         counter = 0
         sent_count_og = 0
         sent_count_aug =0
+        sent_count_og_mia = 0
         step = 0
         # bookcorpus: extract data block by block
         for block in dataset_bookcorpus["train"]:
@@ -117,6 +124,8 @@ if __name__ == '__main__':
                 print("bookcorpus: ", counter, " / ", len(dataset_bookcorpus["train"]))
                 print(f"sentence_count_og {sent_count_og}")
                 print(f"sentence_count_aug {sent_count_aug}")
+                print(f"sentence_count_og_mia {sent_count_og_mia}")
+
              #split block to list of sentences
             s_list = re.split('[.?!]', block)
             counter += 1
@@ -140,33 +149,37 @@ if __name__ == '__main__':
                 # split sentence to words and eliminate whitespaces around the words
                 s_words = s.split()
                 s_words[:] = [x.strip() for x in s_words if x]
-                # there are a lot of wikipeda sentences starting with category, remove the word category
-                if s_words[0] == "category":
-                    s_words = s_words[1:]
-                    s_words[0] = s_words[0][1:]
+                
                 if len(s_words) < 4:
                     continue
-                # if just a shorten original dataset is desired, add the original sentence and go on with the next sentence
-                #if args.cda_type == "original":
-                f1.write(" ".join(s_words) + " . \n")
-                sent_count_og +=1 
-                
-                # if a shorten 2-sided CDA dataset is desired, add the original sentence
-                #if args.cda_type == "2-sided":
+                s_words_og = s_words.copy()
                 f.write(" ".join(s_words) + " . \n")
                 sent_count_aug +=1
-    #           # check if the sentence contains words of the word list
+                f1.write(" ".join(s_words) + " . \n")
+                sent_count_og +=1 
+                f2.write(" ".join(s_words) + " . \n")
+                sent_count_og_mia +=1 
+                 # backup - if augmented sentence is added, then this is added to f2
+
+    #           # check if the sentence contains words of the word list and needs to be augmented
                 for j in range(len(s_words)):
                     for word_pair in word_pairs:
                         if s_words[j] == word_pair[0]: # if there is a match, switch with the corresponding partner word
                             s_words[j] = word_pair[1]
                             edit = True
                             break
-                # if there was a match, add the augmented sentence to new file
+                # if there was a match, add the augmented sentence to new file and the original sentence to the file that is used for the MI Attack later
                 if edit:
                     f.write(' '.join(s_words) + ' . \n')
                     sent_count_aug +=1
+                    f2.write(" ".join(s_words_og) + " . \n")
+                    sent_count_og_mia +=1 
+                if sent_count_og == 500:
+                    break
         print("...done\n\n")
+        print(f"sentence_count_og {sent_count_og}")
+        print(f"sentence_count_aug {sent_count_aug}")
+        print(f"sentence_count_og_mia {sent_count_og_mia}")
 
 
-## python data-prep/CDA_bookcorpus.py --output_file "./data-prep/datasets/augmented_data_big.txt" --output_file1 "./data-prep/datasets/original_data_big.txt" --skip_sentences 50 --block_size 128 
+## python data-prep/CDA_bookcorpus.py --output_file "./data-prep/augmented1.txt" --output_file1 "./data-prep/original1.txt" --output_file2 "./data-prep/original_mia1.txt" --skip_sentences 120 --block_size 100 

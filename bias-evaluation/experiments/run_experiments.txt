@@ -1,6 +1,0 @@
-SEAT
-python bias-bench-main/experiments/seat_debias.py --tests sent-weat6 sent-weat6b sent-weat7 sent-weat7b sent-weat8 sent-weat8b --parametric --model_name_or_path "gpt2-medium" --load_path C:\Users\cmatz\master-thesis\fair-and-private-lm\debiasing\ft_gpt2-medium_dp_5epochs\model\best --model "DPGPT2Model" --bias_type "gender"
-
-Stereoset
-python bias-bench-main/experiments/stereoset_debias.py --model_name_or_path "gpt2-medium" --load_path C:\Users\cmatz\master-thesis\fair-and-private-lm\debiasing\ft_gpt2-medium_dp_5epochs\model\epoch_2 --model "DPGPT2LMHeadModel"
-python bias-bench-main/experiments/stereoset_evaluation.py --predictions_file C:\Users\cmatz\master-thesis\fair-and-private-lm\bias-bench-main\results\stereoset\stereoset_m-DPGPT2Model_c-gpt2-medium.json --output_file C:\Users\cmatz\master-thesis\fair-and-private-lm\bias-bench-main\results\stereoset\stereoset_results_GPT2-medium-dp

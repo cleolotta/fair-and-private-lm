@@ -112,21 +112,16 @@ def parse_args():
         help="The configuration name of the dataset to use (via the datasets library).",
     )
     parser.add_argument(
-        "--train_file", type=str, default=None, help="A csv or a json file containing the training data."
+        "--train_file", type=str, default=None, help="A csv or a json file containing the augmented training data."
     )
     parser.add_argument(
-        "--validation_file", type=str, default=None, help="A csv or a json file containing the validation data."
+        "--validation_file", type=str, default=None, help="A csv or a json file containing the augmented validation data."
     )
     parser.add_argument(
-        "--mia_train_file", type=str, default=None, help="A csv or a json file containing the train data for the mia."
+        "--mia_train_file", type=str, default=None, help="A csv or a json file containing the train data that is used to calculate the loss for the mia."
     )
     parser.add_argument(
-        "--mia_validation_file", type=str, default=None, help="A csv or a json file containing the validation data for the mia."
-    )
-    parser.add_argument(
-        "--validation_split_percentage",
-        default=5,
-        help="The percentage of the train set used as validation set in case there's no validation split",
+        "--mia_validation_file", type=str, default=None, help="A csv or a json file containing the validation data that is used to calculate the loss for the mia."
     )
     parser.add_argument(
         "--model_name_or_path",
@@ -248,6 +243,7 @@ def parse_args():
     parser.add_argument('--lora_alpha', default=32, type=int,  help="LoRA attention alpha")
     parser.add_argument('--per_sample_max_grad_norm', default=0.0, type=float)
     parser.add_argument('--noise_multiplier', default=None, type=float)
+    parser.add_argument('--target_epsilon', type=float)
     parser.add_argument('--objective', default=None, type=str)
     args = parser.parse_args()
 
@@ -384,6 +380,7 @@ def main():
 
     tokenizer.pad_token = tokenizer.eos_token
     config.pad_token_id = config.eos_token_id
+    
     if args.model_name_or_path:
         model = AutoModelForCausalLM.from_pretrained(
             args.model_name_or_path,
@@ -504,10 +501,9 @@ def main():
                 enable_lora=[True, False, True], merge_weights=False
             )
             mark_only_lora_as_trainable(model)
-            if args.lora_dim > 0:
-                dp_transformers.register_grad_sampler_gpt2_lora()
-            else:
-                dp_transformers.register_grad_sampler_gpt2()
+            dp_transformers.register_grad_sampler_gpt2_lora()
+        else:
+            dp_transformers.register_grad_sampler_gpt2()
         
         
 
@@ -585,10 +581,21 @@ def main():
     # for privacy objective:
     if args.add_dp:
         model = model.train()
+        sampling_probability = args.per_device_train_batch_size*accelerator.num_processes*args.gradient_accumulation_steps/len(train_dataset)
+        num_steps = int(args.num_train_epochs*(1/sampling_probability+1))
+        if args.noise_multiplier is None: 
+            noise_multiplier = dp_transformers.dp_utils.find_noise_multiplier(
+            sampling_probability=sampling_probability,
+            num_steps=num_steps,
+            target_delta=1.0/len(train_dataset),
+            target_epsilon=args.target_epsilon
+        )
+        else:
+            noise_multiplier = args.noise_multiplier
         # enter PrivacyEngine
         privacy_engine = opacus.PrivacyEngine(module=model,
             batch_size=args.per_device_train_batch_size*args.gradient_accumulation_steps, sample_size=len(train_dataset),
-            max_grad_norm=1.0, noise_multiplier=args.noise_multiplier, target_delta=1.0/len(train_dataset)
+            max_grad_norm=1.0, noise_multiplier=noise_multiplier, target_delta=1.0/len(train_dataset)
         ) # default values from https://github.com/microsoft/dp-transformers
         privacy_engine.attach(optimizer)
     
@@ -636,9 +643,7 @@ def main():
         if accelerator.is_local_main_process:
             print(f"training epoch {epoch}")
         for step, batch in enumerate(train_dataloader):
-            #print(tokenizer.decode(batch['input_ids'][0]))
-           # print('line 679')
-            #print(batch)
+            print(tokenizer.decode(batch['input_ids'][0]))
             outputs = model(**batch)
             loss = outputs.loss
             loss = loss / args.gradient_accumulation_steps
@@ -703,8 +708,6 @@ def main():
             
         for i, (batch1, batch2) in enumerate(zip(eval_dataloader, mia_eval_dataloader)):
             with torch.no_grad():
-                #print('line 750')
-                #print(batch)
                 outputs = model(**batch1)
                 
 
@@ -714,8 +717,6 @@ def main():
             if args.do_ref_model:
             #evaluate on not-augmented dataset
                 with torch.no_grad():
-                    #print('line 762')
-                    #print(batch)
                     outputs_ref =model_ref(**batch2)
                 loss_ref = outputs_ref.loss
                 losses_ref.append(accelerator.gather(loss_ref.repeat(args.per_device_eval_batch_size)))
@@ -724,16 +725,13 @@ def main():
 
         losses = torch.cat(losses)
         losses = losses[: len(eval_dataset)]
-        
-        a = losses.cpu().numpy()
-        target_eval_loss = np.append(target_eval_loss, a)   
+    
         
         
         if args.do_ref_model:
             losses_ref = torch.cat(losses_ref)
             losses_ref = losses_ref[: len(mia_eval_dataset)]
-            b = losses_ref.cpu().numpy()
-            ref_eval_loss = np.append(ref_eval_loss, b)
+
             sorted_ratio = sorted([l/l_ref for l,l_ref in zip (losses,losses_ref)])
         
         sorted_loss = sorted(losses)
@@ -806,14 +804,12 @@ def main():
         losses = torch.cat(losses)
         losses = losses[: len(train_dataset)]
 
-        a = losses.cpu().numpy()
-        target_train_loss = np.append(target_train_loss, a)
         
         if args.do_ref_model:
             losses_ref = torch.cat(losses_ref)
             losses_ref = losses_ref[: len(mia_train_dataset)]
-            b = losses_ref.cpu().numpy()
-            ref_train_loss = np.append(ref_train_loss, b)
+            #b = losses_ref.cpu().numpy()
+            #ref_train_loss = np.append(ref_train_loss, b)
             lr_rat = [l/l_r for l,l_r in zip(losses,losses_ref)]
             
         if args.do_ref_model:
@@ -866,6 +862,8 @@ def main():
         loss = outputs.loss
         losses.append(accelerator.gather(loss.repeat(args.per_device_eval_batch_size)))
         
+         
+        
         if args.do_ref_model:
             with torch.no_grad():
                 outputs_ref =model_ref(**batch2)
@@ -876,10 +874,15 @@ def main():
 
     losses = torch.cat(losses)
     losses = losses[: len(eval_dataset)]
+    a = losses.cpu().numpy()
+    perplexity_ = math.exp(np.mean(a))
+    target_eval_loss = np.append(target_eval_loss, a)
     
     if args.do_ref_model:
         losses_ref = torch.cat(losses_ref)
         losses_ref = losses_ref[: len(mia_eval_dataset)]
+        b = losses_ref.cpu().numpy()
+        ref_eval_loss = np.append(ref_eval_loss, b)
         sorted_ratio = sorted([l/l_ref for l,l_ref in zip (losses,losses_ref)])
     
     sorted_loss = sorted(losses)
@@ -925,14 +928,15 @@ def main():
     accelerator.wait_for_everyone()
     
     losses = torch.cat(losses)
-
-    
     losses = losses[: len(train_dataset)]
-    
+    a = losses.cpu().numpy()
+    target_train_loss = np.append(target_train_loss, a)
     
     if args.do_ref_model:
         losses_ref = torch.cat(losses_ref)
         losses_ref = losses_ref[: len(mia_train_dataset)]
+        b = losses_ref.cpu().numpy()
+        ref_train_loss = np.append(ref_train_loss, b)
         lr_rat = [l/l_r for l,l_r in zip(losses,losses_ref)]
         
     if args.do_ref_model:
@@ -942,10 +946,10 @@ def main():
         guess_cor = sum([1 for sample in losses if sample<threshold])
 
 
-    np.savetxt("ref_train_loss_aug.txt", ref_train_loss)
-    np.savetxt("ref_eval_loss_aug.txt", ref_eval_loss)
-    np.savetxt("target_train_loss_aug.txt", target_train_loss)
-    np.savetxt("target_eval_loss_aug.txt", target_eval_loss)
+    np.savetxt("dp_ref_train_loss_aug.txt", ref_train_loss)
+    np.savetxt("dp_ref_eval_loss_aug.txt", ref_eval_loss)
+    np.savetxt("dp_target_train_loss_aug.txt", target_train_loss)
+    np.savetxt("dp_target_eval_loss_aug.txt", target_eval_loss)
     
     try:
         perplexity_train = math.exp(torch.mean(losses))
@@ -961,11 +965,11 @@ def main():
         print(f"end of training perplexity: {perplexity} perplexity_train: {perplexity_train}")
         print("____")
         if args.do_ref_model:
-                print(f"{guess_cor_ref/len(losses)}\n{guess_cor/len(losses)}\n{perplexity}\n{perplexity_train}")
-                ratio = len(mia_train_dataset)/len(mia_eval_dataset)
-                guess_cor_subsampled = sum([1 for sample in losses[::int(ratio)] if sample<threshold])
-                guess_cor_ref_subsampled =  sum([1 for sample in lr_rat[::int(ratio)] if sample<threshold_ref])                
-                print(f"{guess_cor_ref_subsampled/(len(lr_rat[::int(ratio)]))}\n{guess_cor_subsampled/len(losses[::int(ratio)])}\n{guess_cor_ref_subsampled/(guess_cor_ref_subsampled+int(0.1*len(mia_eval_dataset)))}\n{guess_cor_subsampled/(guess_cor_subsampled+int(0.1*len(mia_eval_dataset)))}")
+            print(f"{guess_cor_ref/len(losses)}\n{guess_cor/len(losses)}\n{perplexity}\n{perplexity_train}")
+            ratio = len(mia_train_dataset)/len(mia_eval_dataset)
+            guess_cor_subsampled = sum([1 for sample in losses[::int(ratio)] if sample<threshold])
+            guess_cor_ref_subsampled =  sum([1 for sample in lr_rat[::int(ratio)] if sample<threshold_ref])                
+            print(f"{guess_cor_ref_subsampled/(len(lr_rat[::int(ratio)]))}\n{guess_cor_subsampled/len(losses[::int(ratio)])}\n{guess_cor_ref_subsampled/(guess_cor_ref_subsampled+int(0.1*len(mia_eval_dataset)))}\n{guess_cor_subsampled/(guess_cor_subsampled+int(0.1*len(mia_eval_dataset)))}")
 
         else:
             print(f"{guess_cor/len(losses)}\n{perplexity}\n{perplexity_train}")

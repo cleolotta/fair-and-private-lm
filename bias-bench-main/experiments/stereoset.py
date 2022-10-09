@@ -4,7 +4,7 @@ import os
 
 import transformers
 import sys
-sys.path.append('C:/Users/cmatz/master-thesis/fair-and-private-lm/bias-bench-main')
+sys.path.append('C:/Users/cmatz/master-thesis/fair-and-private-lm/bias-evaluation')
 from bias_bench.benchmark.stereoset import StereoSetRunner
 from bias_bench.model import models
 from bias_bench.util import generate_experiment_id, _is_generative

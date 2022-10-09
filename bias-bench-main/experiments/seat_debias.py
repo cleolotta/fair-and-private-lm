@@ -155,5 +155,5 @@ if __name__ == "__main__":
     print(results)
 
     os.makedirs(f"{args.persistent_dir}/results/seat", exist_ok=True)
-    with open(f"{args.persistent_dir}/results/seat/{experiment_id}-gpt2-medium-5epochs-dp.json", "w") as f:
+    with open(f"{args.persistent_dir}/results/seat/{experiment_id}-gpt2-medium-10epochs-dp.json", "w") as f:
         json.dump(results, f)

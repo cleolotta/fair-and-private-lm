@@ -47,6 +47,7 @@ parser.add_argument(
         "SelfDebiasAlbertForMaskedLM",
         "SelfDebiasRobertaForMaskedLM",
         "DPGPT2Model",
+        "DPGPT2LMHeadModel"
     ],
     help="Model to evalute (e.g., SentenceDebiasBertForMaskedLM).",
 )

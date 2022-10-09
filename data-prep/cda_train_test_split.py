@@ -78,6 +78,6 @@ def main():
 if __name__ == "__main__":
     main()
     
-# python data-prep/cda_train_test_split.py --input_file "./data-prep/datasets/original-big-2.txt" --output_test "./data-prep/datasets/original-test-big.txt" --output_train "./data-prep/datasets/original-train-big.txt"    
+# python data-prep/cda_train_test_split.py --input_file "./test/original.txt" --output_test "./test/original-test.txt" --output_train "./test/original-train.txt"    
 # python cda_train_test_split.py --input_file "./datasets/augmented_data.txt" --output_test "./datasets/augmented-test1.txt" --output_train "./datasets/augmented-train1.txt"    
-# python data-prep/cda_train_test_split.py --input_file "./data-prep/datasets/augmented_wiki.txt" --output_test "./data-prep/datasets/augmented-wiki-test.txt" --output_train "./data-prep/datasets/augmented-wiki-train.txt"
+# python data-prep/cda_train_test_split.py --input_file "C:/Users/cmatz/master-thesis/fplm/datasets/original_data.txt" --output_test "pups1" --output_train "pups.txt"
