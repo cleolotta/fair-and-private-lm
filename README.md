@@ -1,1 +1,1 @@
-# fair-and-private-lm
+# Fair and private language models
