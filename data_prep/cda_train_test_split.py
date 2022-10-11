@@ -37,6 +37,7 @@ def main():
     #dataset = dataset.train_test_split(test_size=0.2, shuffle= False)
     print('hi')
     df = pd.read_table(args.input_file, names=['text'])
+    df = df[:500]
     print(df['text'][0])
     print("read into df")
     #print(df[0])
@@ -78,6 +79,6 @@ def main():
 if __name__ == "__main__":
     main()
     
-# python data-prep/cda_train_test_split.py --input_file "./test/original.txt" --output_test "./test/original-test.txt" --output_train "./test/original-train.txt"    
+# python data_prep/cda_train_test_split.py --input_file "./data_prep/data/original-train.txt" --output_test "./test/original-test.txt" --output_train "./test/original-train.txt"    
 # python cda_train_test_split.py --input_file "./datasets/augmented_data.txt" --output_test "./datasets/augmented-test1.txt" --output_train "./datasets/augmented-train1.txt"    
 # python data-prep/cda_train_test_split.py --input_file "C:/Users/cmatz/master-thesis/fplm/datasets/original_data.txt" --output_test "pups1" --output_train "pups.txt"
