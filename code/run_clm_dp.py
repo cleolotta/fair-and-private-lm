@@ -454,8 +454,37 @@ def main():
             desc=f"Grouping texts in chunks of {block_size}",
         )
 
-    train_dataset = lm_datasets["train"]
-    eval_dataset = lm_datasets["validation"]
+    def pad_dataset(examples):
+        # add padding to each batch
+        outputs = []
+        #original =  []
+        for input_ids in examples["input_ids"]:
+            # For simplicity, decode each example. It is easier to apply augmentation
+            # on text as opposed to token IDs.
+            sentence = tokenizer.decode(input_ids)
+            outputs.append(sentence)
+      
+        result = tokenizer(
+            outputs,
+            return_special_tokens_mask=False,
+            add_special_tokens=False,  # Special tokens are already added.
+            truncation=True,
+            padding=True,
+        )
+        result["labels"] = result["input_ids"].copy()
+        return result
+
+
+    tokenized_datasets = lm_datasets.map(
+        pad_dataset,
+        batched=True,
+        num_proc=args.preprocessing_num_workers,
+        load_from_cache_file=not args.overwrite_cache,
+        desc=f"Preprocess data in the same way as augmentation so that it becomes comparable",
+    )
+    
+    train_dataset = tokenized_datasets["train"]
+    eval_dataset = tokenized_datasets["validation"]
 
     
     # for differential privacy:

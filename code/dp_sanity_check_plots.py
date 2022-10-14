@@ -109,7 +109,7 @@ def plot_linear(xlabel,ylabel,title,var,data_mia_aug,data_mia_full,f_name):
     #ax4 = sns.lineplot(data=data_mia_dp2[var], palette='Set2', linewidth=2.5)
     #ax4.set(xlabel=xlabel, ylabel=ylabel, title=title, xticks=[i+1 for i in range(len(data_mia_dp2[var]))])
   
-    ax2.legend(title='Fine-tuning Method',labels=['FT with DP 0.3', 'FT with DP 0.6'])
+    ax2.legend(title='Fine-tuning Method',labels=['FT with DP 0.6', 'FT with DP 0.9'])
     
     #plt.savefig(f_name, transparent=True)
 
@@ -146,20 +146,20 @@ def plot_scatter(xlabel,ylabel,title,hue,legendtitle,df_all,f_name,pareto=False,
     plt.show()
     
     
-data_dp_06 = get_data_mia("./objective_dp_dropout_debias_False_add_dp_True_noise_multiplier_0.6_lora_4_layer_None_ref_True_maxlen_128_model_gpt2-medium_lr_1e-05_epoch_2_trba_1_acc_128_evba1/stdout",hue='dp noise 0.6')
-data_dp_03 =  get_data_mia("./objective_dp_dropout_debias_False_add_dp_True_noise_multiplier_0.3_lora_4_layer_None_ref_True_maxlen_128_model_gpt2-medium_lr_1e-05_epoch_2_trba_1_acc_128_evba1/stdout", hue = 'dp noise 0.3')
+data_dp_06 = get_data_mia("./models/objective_dp_dropout_debias_False_add_dp_True_noise_multiplier_0.6_lora_4_layer_None_ref_True_maxlen_1024_model_gpt2-medium_lr_1e-05_epoch_2_trba_2_acc_128_evba1/stdout",hue='dp noise 0.6')
+data_dp_09 =  get_data_mia("./models/objective_dp_dropout_debias_False_add_dp_True_noise_multiplier_0.9_lora_4_layer_None_ref_True_maxlen_1024_model_gpt2-medium_lr_1e-05_epoch_2_trba_2_acc_128_evba1/stdout", hue = 'dp noise 0.3')
 #data_lora_dp_5 = get_data_mia("C:/Users/cmatz/master-thesis/fplm/models/ft_gpt2-medium_dp_5epochs/stdout", hue = 'DP model')
 #data_lora_dp_10 = get_data_mia("C:/Users/cmatz/master-thesis/fplm/models/ft_gpt2-medium_dp_10epochs/stdout", hue = 'DP model 10 epochs')
 
 dp_06= pd.DataFrame.from_dict(data_dp_06)
-dp_03 = pd.DataFrame.from_dict(data_dp_03)
+dp_09 = pd.DataFrame.from_dict(data_dp_09)
 #df_dp_5 = pd.DataFrame.from_dict(data_lora_dp_5)[:3]
 #df_dp_10 = pd.DataFrame.from_dict(data_lora_dp_10)
 
 
 
 
-df_all= pd.concat([dp_03, dp_06], axis=0)
+df_all= pd.concat([dp_06, dp_09], axis=0)
 #data_exposure = get_data_exposure('/home/tr33/Documents/efficient_ft/gen/stdout-exposure')    
 
 
@@ -168,7 +168,7 @@ xlabel='Epoch'
 title = 'MIA recall  vs. Epoch'
 var = 'attack1'
 f_name ='mia-epoch.pdf'
-plot_linear(xlabel,ylabel,title,var,dp_03,dp_06, f_name)
+plot_linear(xlabel,ylabel,title,var,dp_06, dp_09, f_name)
 
 
 
@@ -178,7 +178,7 @@ title = 'Validation PPL  vs. Epoch'
 var = 'valperp'
 f_name ='valperp-epoch.pdf'
 
-plot_linear(xlabel,ylabel,title,var,df_augmented,df_original,df_dp_5, f_name)
+plot_linear(xlabel,ylabel,title,var,dp_06, dp_09, f_name)
 
 
 ylabel = 'Generalization Gap'
@@ -187,7 +187,7 @@ title = 'Validation PPL  vs. Epoch'
 var = 'gen_gap'
 f_name ='gengap-epoch.pdf'
 
-plot_linear(xlabel,ylabel,title,var,df_augmented,df_original,df_dp_5, f_name)
+plot_linear(xlabel,ylabel,title,var,dp_06, dp_09, f_name)
 
 
 xlabel = 'valperp'

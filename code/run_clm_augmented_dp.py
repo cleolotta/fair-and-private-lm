@@ -42,6 +42,7 @@ import torch
 from datasets import load_dataset
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
+from functools import partial
 
 import transformers
 from accelerate import Accelerator, DistributedType
@@ -75,6 +76,7 @@ from scipy.stats import skewnorm
 from scipy.stats import kstest
 from dp_transformers.layers.dp_merged_linear import mark_only_lora_as_trainable
 from dp_transformers.module_modification import convert_gpt2_attention_to_lora
+from data_prep import cda_words
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda:0" if use_cuda else "cpu")
 transformers.logging.set_verbosity_error()
@@ -116,12 +118,6 @@ def parse_args():
     )
     parser.add_argument(
         "--validation_file", type=str, default=None, help="A csv or a json file containing the validation data."
-    )
-    parser.add_argument(
-        "--mia_train_file", type=str, default=None, help="A csv or a json file containing the train data that is used to calculate the loss for the mia."
-    )
-    parser.add_argument(
-        "--mia_validation_file", type=str, default=None, help="A csv or a json file containing the validation data that is used to calculate the loss for the mia."
     )
     parser.add_argument(
         "--model_name_or_path",
@@ -244,6 +240,7 @@ def parse_args():
     parser.add_argument('--per_sample_max_grad_norm', default=0.0, type=float)
     parser.add_argument('--noise_multiplier', default=None, type=float)
     parser.add_argument('--objective', default=None, type=str)
+    parser.add_argument('--counterfactual_augmentation', default='gender')
     args = parser.parse_args()
 
     # Sanity checks
@@ -256,12 +253,6 @@ def parse_args():
         if args.validation_file is not None:
             extension = args.validation_file.split(".")[-1]
             assert extension in ["csv", "json", "txt"], "`validation_file` should be a csv, json or txt file."
-        if args.mia_train_file is not None:
-            extension = args.mia_train_file.split(".")[-1]
-            assert extension in ["csv", "json", "txt"], "`mia_train_file` should be a csv, json or txt file."
-        if args.mia_validation_file is not None:
-            extension = args.mia_validation_file.split(".")[-1]
-            assert extension in ["csv", "json", "txt"], "`mia_validation_file` should be a csv, json or txt file."
     return args
 
             
@@ -337,17 +328,16 @@ def main():
         data_files["train"] = args.train_file
     if args.validation_file is not None:
         data_files["validation"] = args.validation_file
-    if args.mia_train_file is not None:
-        data_files["mia_train"] = args.mia_train_file
-    if args.mia_validation_file is not None:
-        data_files["mia_validation"] = args.mia_validation_file
     extension = args.train_file.split(".")[-1]
     if extension == "txt":
         extension = "text"
         dataset_args["keep_linebreaks"] = not args.no_keep_linebreaks
     raw_datasets = load_dataset(extension, data_files=data_files, **dataset_args)#, cache_dir= "/storage/ukp/work/matzken/fplm/ft_gpt2/cache")
-    print(raw_datasets['train']['text'][0])
-
+    #print(raw_datasets['train']['text'][0])
+    txt = Path(args.train_file).resolve()
+    original_train_file = sum(1 for row in open(txt, "r", encoding= "utf-8"))
+    txt1 = Path(args.validation_file).resolve()
+    original_eval_file = sum(1 for row in open(txt1, "r", encoding= "utf-8"))
     # See more about loading any type of standard or custom dataset (from files, python dict, pandas DataFrame, etc) at
     # https://huggingface.co/docs/datasets/loading_datasets.html.
 
@@ -404,23 +394,15 @@ def main():
         "transformers.tokenization_utils_base"
     )
     
-    # Here, we enable line by line read -> https://finisky.github.io/finetunelmlinebyline.en/
     def tokenize_function(examples):
-        # Remove empty lines
-        examples[text_column_name] = [
-            line for line in examples[text_column_name] if len(line) > 0 and not line.isspace()
-        ]
-        tokens = tokenizer(
-            examples[text_column_name],
-            padding='max_length',
-            truncation=True,
-            max_length=args.block_size,
-            # # We use this option because DataCollatorForLanguageModeling (see below) is more efficient when it
-            # # receives the `special_tokens_mask`.
-            #return_special_tokens_mask=True,
-        )
-        tokens['labels'] = tokens['input_ids'].copy()
-        return tokens
+        with CaptureLogger(tok_logger) as cl:
+            output = tokenizer(examples[text_column_name])
+        # clm input could be much much longer than block_size
+        if "Token indices sequence length is longer than the" in cl.out:
+            tok_logger.warning(
+                "^^^^^^^^^^^^^^^^ Please ignore the warning above - this long input will be chunked into smaller bits before being passed to the model."
+            )
+        return output
     
     #raw_text = raw_datasets['train']['text']
     #tokenized_test = tokenize_function(raw_datasets['train'])
@@ -430,10 +412,10 @@ def main():
             tokenize_function,
             batched=True,
             num_proc=args.preprocessing_num_workers,
-            remove_columns=[text_column_name],
+            remove_columns=column_names,
             load_from_cache_file=not args.overwrite_cache,
-            desc="Running tokenizer on dataset line_by_line",
-        )    
+            desc="Running tokenizer on dataset",
+        )   
 
     if args.block_size is None:
         block_size = tokenizer.model_max_length
@@ -475,26 +457,145 @@ def main():
     # To speed up this part, we use multiprocessing. See the documentation of the map method for more information:
     # https://huggingface.co/docs/datasets/package_reference/main_classes.html#datasets.Dataset.map
     #group_texts(tokenized_datasets['train']['text'])
-    #with accelerator.main_process_first():
-    #    lm_datasets = tokenized_datasets.map(
-    #        group_texts,
-    #        batched=True,
-    #        num_proc=args.preprocessing_num_workers,
-    #        load_from_cache_file=not args.overwrite_cache,
-    #        desc=f"Grouping texts in chunks of {block_size}",
-    #    )
+    with accelerator.main_process_first():
+        lm_datasets = tokenized_datasets.map(
+            group_texts,
+            batched=True,
+            num_proc=args.preprocessing_num_workers,
+            load_from_cache_file=not args.overwrite_cache,
+            desc=f"Grouping texts in chunks of {block_size}",
+        )
     
-    lm_datasets = tokenized_datasets
+    def create_mia_dataset(examples, bias_word_list):
+        outputs = []
+        #original =  []
+        for input_ids in examples["input_ids"]:
+            # For simplicity, decode each example. It is easier to apply augmentation
+            # on text as opposed to token IDs.
+            sentence = tokenizer.decode(input_ids)
+            words = sentence.split()  # Tokenize based on whitespace.
+            augmented_sentence = words[:]
+
+            augmented = False
+            for position, word in enumerate(words):
+                if word in bias_word_list:
+                    augmented = True
+                    break
+
+            if augmented:
+                outputs.append(sentence)
+                outputs.append(sentence) # append sentence twice for membership inference attack later
+            else:
+                outputs.append(sentence)
+
+        # There are potentially no counterfactual examples.
+        if not outputs:
+            return {"input_ids": [], "attention_mask": [], "labels": []}
+        
+
+        result = tokenizer(
+            outputs,
+            return_special_tokens_mask=False,
+            add_special_tokens=False, 
+            truncation=True,
+            padding="max_length",
+        )
+        result["labels"] = result["input_ids"].copy()
+        return result 
+
+    def gender_counterfactual_augmentation(examples, bias_attribute_words):
+        """Applies gender counterfactual data augmentation to a batch of examples.
+            Notes:
+            * We apply CDA after the examples have potentially been grouped.
+            * This implementation can be made more efficient by operating on
+              token IDs as opposed to text. We currently decode each example
+              as it is simpler.
+        """
+        outputs = []
+        #original =  []
+        for input_ids in examples["input_ids"]:
+            # For simplicity, decode each example. It is easier to apply augmentation
+            # on text as opposed to token IDs.
+            sentence = tokenizer.decode(input_ids)
+            words = sentence.split()  # Tokenize based on whitespace.
+            augmented_sentence = words[:]
+
+            augmented = False
+            for position, word in enumerate(words):
+                for word_pair in bias_attribute_words:
+                    if word == word_pair[0]:
+                        augmented = True
+                        augmented_sentence[position] = word_pair[1]
+
+            if augmented:
+                augmented_sentence = " ".join(augmented_sentence)
+                outputs.append(augmented_sentence)
+                outputs.append(sentence)
+                #original.append(sentence) # append sentence twice for membership inference attack later
+                #original.append(sentence)
+            else:
+                outputs.append(sentence)
+                #original.append(sentence)
+
+        # There are potentially no counterfactual examples.
+        if not outputs:
+            return {"input_ids": [], "attention_mask": [], "labels": []}
+        
+
+        augmented = tokenizer(
+            outputs,
+            return_special_tokens_mask=False,
+            add_special_tokens=False,  # Special tokens are already added.
+            truncation=True,
+            padding="max_length",
+        )
+        augmented["labels"] = augmented["input_ids"].copy()
+        return augmented
     
-    # Here, we take the not augmented dataset as data for the membership inference attack
-    train_dataset = lm_datasets["train"]
-    eval_dataset = lm_datasets["validation"]
-    mia_train_dataset = lm_datasets["mia_train"]
-    mia_eval_dataset = lm_datasets["mia_validation"]   
+    
+    
+    column_names = lm_datasets['train'].column_names
+    
+    if args.counterfactual_augmentation is not None:
+        
+        logger.info(f"Applying {args.counterfactual_augmentation} CDA.")
 
-    logger.info("*** raw_datasets/tokenized_datasets " + str(raw_datasets['train'].shape) + " / " + str(tokenized_datasets['train'].shape))
-    logger.info("*** train_dataset shape: " + str(train_dataset[0].keys()) + "/" + str(train_dataset.shape) + "/" + str(len(train_dataset['input_ids'][0])))
+        # Load the bias attribute words.
+        print("Get gender word pairs...")
+        word_pairs = cda_words.get_gender_word_pairs()
+        print("...done\n")
+        bias_word_list = cda_words.get_gender_word_list()
+        counterfactual_augmentation_func = partial(
+            gender_counterfactual_augmentation,
+            bias_attribute_words=word_pairs,
+        )
 
+        tokenized_datasets = lm_datasets.map(
+            counterfactual_augmentation_func,
+            batched=True,
+            num_proc=args.preprocessing_num_workers,
+            load_from_cache_file=not args.overwrite_cache,
+            remove_columns=column_names,
+            desc=f"Applying counterfactual augmentation",
+        )
+        mia_dataset_creation = partial(
+            create_mia_dataset,
+            bias_word_list=bias_word_list,
+        )
+        mia_tokenized_datasets = lm_datasets.map(
+            mia_dataset_creation,
+            batched=True,
+            num_proc=args.preprocessing_num_workers,
+            load_from_cache_file=not args.overwrite_cache,
+            remove_columns=column_names,
+            desc=f"Creating a dataset for membership inference attack (loss comparison of augmented and not augmented sentence)",
+        )
+        
+    mia_train_dataset = mia_tokenized_datasets['train']
+    mia_eval_dataset = mia_tokenized_datasets['validation']    
+    train_dataset = tokenized_datasets['train']
+    eval_dataset = tokenized_datasets['validation']
+        
     # for differential privacy:
     if args.add_dp:
         if args.lora_dim > 0:
@@ -535,19 +636,22 @@ def main():
 
     # Note -> the training dataloader needs to be prepared before we grab his length below (cause its length will be
     # shorter in multiprocess)
-    
+    if args.add_dp:
+        data_collator = dp_transformers.DataCollatorForPrivateCausalLanguageModeling(tokenizer)
+    else:
+        data_collator = default_data_collator
     # DataLoaders creation:
     train_dataloader = DataLoader(
-        train_dataset, collate_fn=default_data_collator, batch_size=args.per_device_train_batch_size
+        train_dataset, collate_fn=data_collator, batch_size=args.per_device_train_batch_size
     )
     eval_dataloader = DataLoader(
-        eval_dataset, collate_fn=default_data_collator, batch_size=args.per_device_eval_batch_size
+        eval_dataset, collate_fn=data_collator, batch_size=args.per_device_eval_batch_size
     )
     mia_train_dataloader = DataLoader(
-        mia_train_dataset, collate_fn=default_data_collator, batch_size=args.per_device_train_batch_size
+        mia_train_dataset, collate_fn=data_collator, batch_size=args.per_device_train_batch_size
     )
     mia_eval_dataloader = DataLoader(
-        mia_eval_dataset, collate_fn=default_data_collator, batch_size=args.per_device_eval_batch_size
+        mia_eval_dataset, collate_fn=data_collator, batch_size=args.per_device_eval_batch_size
     )
     if args.train_head_only:
         for params in model.parameters():
@@ -617,17 +721,30 @@ def main():
     if accelerator.is_local_main_process:
         print("model_params (million)", count_parameters(model)/1000000)
 
-
+    
 
     logger.info("***** Running training *****")
-    logger.info(f"  Num mia examples = {len(mia_train_dataset)}")
+    logger.info(f"  Num original dataset train examples = {original_train_file}")
+    logger.info(f"  Num original dataset validation examples = {original_eval_file}")
+
+    logger.info(f"  Num og-mia train examples = {len(mia_train_dataset)}")
+    logger.info(f"  Num og-mia eval examples = {len(mia_eval_dataset)}")
     logger.info(f"  Num examples = {len(train_dataset)}")
+    logger.info(f"  Num eval examples = {len(eval_dataset)}")
     logger.info(f"  Num Epochs = {args.num_train_epochs}")
     logger.info(f"  Instantaneous batch size per device = {args.per_device_train_batch_size}")
     logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
     logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
     logger.info(f"  Total optimization steps = {args.max_train_steps}")
     # Only show the progress bar once on each machine.
+    with open("dataset_v2.txt",'a+', encoding='utf-8') as f:
+        for step, batch in enumerate(train_dataloader):
+        #print(batch)
+            f.write(tokenizer.decode(batch['input_ids'][0]))
+            f.write("\n ---------- \n")
+            if step == 100:
+                break
+
     progress_bar = tqdm(range(args.max_train_steps), disable=not accelerator.is_local_main_process)
     completed_steps = 0
     best_loss = 1000000

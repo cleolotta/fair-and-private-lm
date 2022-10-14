@@ -399,7 +399,9 @@ def main():
     text_column_name = "text" if "text" in column_names else column_names[0]
 
     def tokenize_function(examples):
-        return tokenizer(examples[text_column_name])
+        return tokenizer(
+            examples[text_column_name],
+        )
 
     with accelerator.main_process_first():
         tokenized_datasets = raw_datasets.map(
@@ -460,9 +462,38 @@ def main():
             load_from_cache_file=not args.overwrite_cache,
             desc=f"Grouping texts in chunks of {block_size}",
         )
+        
+    def pad_dataset(examples):
+        # add padding to each batch
+        outputs = []
+        #original =  []
+        for input_ids in examples["input_ids"]:
+            # For simplicity, decode each example. It is easier to apply augmentation
+            # on text as opposed to token IDs.
+            sentence = tokenizer.decode(input_ids)
+            outputs.append(sentence)
+      
+        result = tokenizer(
+            outputs,
+            return_special_tokens_mask=False,
+            add_special_tokens=False,  # Special tokens are already added.
+            truncation=True,
+            padding=True,
+        )
+        result["labels"] = result["input_ids"].copy()
+        return result
 
-    train_dataset = lm_datasets["train"]
-    eval_dataset = lm_datasets["validation"]
+
+    tokenized_datasets = lm_datasets.map(
+        pad_dataset,
+        batched=True,
+        num_proc=args.preprocessing_num_workers,
+        load_from_cache_file=not args.overwrite_cache,
+        desc=f"Creating a dataset for membership inference attack (loss comparison of augmented and not augmented sentence)",
+    )
+    
+    train_dataset = tokenized_datasets["train"]
+    eval_dataset = tokenized_datasets["validation"]
 
     # for differential privacy:
     if args.add_dp:
@@ -506,7 +537,9 @@ def main():
     )
     eval_dataloader = DataLoader(
         eval_dataset, collate_fn= default_data_collator, batch_size=args.per_device_eval_batch_size)
-    
+    if accelerator.is_local_main_process:
+        print("model_params (million)", count_parameters(model)/1000000)
+        
     if args.train_head_only:
         for params in model.parameters():
             params.requires_grad = False
@@ -524,12 +557,6 @@ def main():
         for params in model.transformer.h[n].parameters():
                 params.requires_grad = True
     
-    #print("------------------------------------ make sure the layers are frozen ---------------------------------------------------------------")
-    #for params in model.parameters():
-    #    print(params.requires_grad)
-    #print("----------------------------- make sure the layers of ref model are not frozen -----------------------------------------------------")
-    #for params in model_ref.parameters():
-    #    print(params.requires_grad)
     
     if accelerator.is_local_main_process:
         print("model_params (million)", count_parameters(model)/1000000)
@@ -539,9 +566,9 @@ def main():
         model, optimizer, train_dataloader, eval_dataloader
     )
     print(model.device)
-    #model_ref = accelerator.prepare(
-    #    model_ref
-    #)  
+    model_ref = accelerator.prepare(
+        model_ref
+    )  
     
     # for privacy objective:
     if args.add_dp:
@@ -610,6 +637,7 @@ def main():
         if accelerator.is_local_main_process:
             print(f"training epoch {epoch}")
         for step, batch in enumerate(train_dataloader):
+            print(tokenizer.decode(batch["input_ids"][0]))
             outputs = model(**batch)
             loss = outputs.loss
             loss = loss / args.gradient_accumulation_steps
@@ -808,7 +836,7 @@ def main():
             print("_____")
             if args.add_dp:
                 eps, alpha = optimizer.privacy_engine.get_privacy_spent(1.0/len(train_dataset))
-            print("End of epoch {}, we have epsilon {} for alpha {} from privacy engine".format(epoch, eps, alpha))
+                print("End of epoch {}, we have epsilon {} for alpha {} from privacy engine".format(epoch, eps, alpha))
 
 
     model.eval()
@@ -838,16 +866,16 @@ def main():
     losses = torch.cat(losses)
     losses = losses[: len(eval_dataset)]
         
-    #a = losses.cpu().numpy()
-    #target_eval_loss = np.append(target_eval_loss, a)
+    a = losses.cpu().numpy()
+    target_eval_loss = np.append(target_eval_loss, a)
 
     
     if args.do_ref_model:
         losses_ref = torch.cat(losses_ref)
         losses_ref = losses_ref[: len(eval_dataset)]
 
-        #b = losses_ref.cpu().numpy()
-        #ref_eval_loss = np.append(ref_eval_loss, b)
+        b = losses_ref.cpu().numpy()
+        ref_eval_loss = np.append(ref_eval_loss, b)
 
         sorted_ratio = sorted([l/l_ref for l,l_ref in zip (losses,losses_ref)])
     
@@ -897,12 +925,14 @@ def main():
     losses = torch.cat(losses)
     losses = losses[: len(train_dataset)]
     
+    a = losses.cpu().numpy()
+    target_train_loss = np.append(target_train_loss, a)
     
     if args.do_ref_model:
         losses_ref = torch.cat(losses_ref)
         losses_ref = losses_ref[: len(train_dataset)]
-        #b = losses_ref.cpu().numpy()
-        #ref_train_loss = np.append(ref_train_loss, b)
+        b = losses_ref.cpu().numpy()
+        ref_train_loss = np.append(ref_train_loss, b)
         lr_rat = [l/l_r for l,l_r in zip(losses,losses_ref)]
         
     if args.do_ref_model:
@@ -911,11 +941,14 @@ def main():
     else:    
         guess_cor = sum([1 for sample in losses if sample<threshold])
 
-    np.savetxt("ref_train_loss3.txt", ref_train_loss)
-    np.savetxt("ref_eval_loss3.txt", ref_eval_loss)
-    np.savetxt("target_train_loss3.txt", target_train_loss)
-    np.savetxt("target_eval_loss3.txt", target_eval_loss)
-
+    #np.savetxt("/storage/ukp/work/matzken/fplm/ft_gpt2/experiments/sanity_check/ref_train_loss.txt", ref_train_loss)
+    #np.savetxt("/storage/ukp/work/matzken/fplm/ft_gpt2/experiments/sanity_check/ref_eval_loss.txt", ref_eval_loss)
+    #np.savetxt("/storage/ukp/work/matzken/fplm/ft_gpt2/experiments/sanity_check/target_train_loss.txt", target_train_loss)
+    #np.savetxt("/storage/ukp/work/matzken/fplm/ft_gpt2/experiments/sanity_check/target_eval_loss.txt", target_eval_loss)
+    np.savetxt("og_ref_train_loss.txt", ref_train_loss)
+    np.savetxt("og_ref_eval_loss.txt", ref_eval_loss)
+    np.savetxt("og_target_train_loss.txt", target_train_loss)
+    np.savetxt("og_target_eval_loss.txt", target_eval_loss)
     
     try:
         perplexity_train = math.exp(torch.mean(losses))
@@ -948,6 +981,7 @@ def main():
 if __name__ == "__main__":
     main()
 
+#"args": ["--model_name_or_path", "gpt2", "--tokenizer_name", "gpt2", "--train_file", "./test/original-train.txt", "--validation_file", "./test/original-test.txt", "--block_size", "128", "--output_dir" ,"C:/Users/cmatz/master-thesis/fair-and-private-lm/test", "--eval_steps", "100", "--learning_rate", "1e-5", "--do_ref_model", "--per_device_eval_batch_size", "1", "--per_device_train_batch_size", "1", "--gradient_accumulation_steps", "1", "--num_train_epochs", "2", "--train_layer_n_only", "0"]
 
 #"args": ["--model_name_or_path", "gpt-2", "--tokenizer_name", "gpt-2", "--train_file", "./data-prep/datasets/augmented-train1.txt", "--mia_train_file", "./data-prep/datasets/original-train1.txt", "--validation_file", "./data-prep/datasets/augmented-test1.txt", "mia_validation_file", "./data-prep/datasets/original-test1.txt", "--block_size", "1024", "--output_dir", "ft_gpt2_mia_aug_trained", "--eval_steps", "1000", "--learning_rate", "1e-5", "--do_ref_model", "--per_device_eval_batch_size", "1", "--gradient_accumulation_steps", "8", "--num_train_epochs", "3"] 
 # python code/run_clm_sanity_check.py --model_name_or_path gpt2 --tokenizer_name gpt2 --train_file "./test/original-train.txt" --validation_file "./test/original-test.txt" --block_size 128 --output_dir "C:/Users/cmatz/master-thesis/fair-and-private-lm/test" --eval_steps 100 --learning_rate 1e-5 --do_ref_model --per_device_eval_batch_size 1 --gradient_accumulation_steps 1 --num_train_epochs 2 --train_layer_n_only 4
