@@ -496,4 +496,9 @@ class DPGPT2LMHeadModel:
         model = transformers.GPT2LMHeadModel.from_pretrained(model_name_or_path)
         return model
 
-
+class DPGPT2ForSequenceClassification:
+    def __new__(self, model_name_or_path, config):
+        model = transformers.GPT2ForSequenceClassification.from_pretrained(
+            model_name_or_path, config=config
+        )
+        return model

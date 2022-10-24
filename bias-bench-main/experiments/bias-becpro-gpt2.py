@@ -4,7 +4,11 @@ import csv
 import argparse
 import tqdm 
 from tqdm import tqdm
+import transformers
 import torch
+import sys
+sys.path.append('C:/Users/cmatz/master-thesis/fair-and-private-lm/bias-bench-main')
+from bias_bench.model import models
 from transformers import OpenAIGPTTokenizer, OpenAIGPTLMHeadModel
 from transformers import GPT2Tokenizer, GPT2LMHeadModel
 from scipy.special import softmax
@@ -28,28 +32,41 @@ def main():
                         type=str,
                         required=False,
                         default="gpt2",)
-    parser.add_argument("--tokenizer_name_or_path",
-                        type=str,
-                        required=False,
-                        default="gpt2",)
     parser.add_argument("--output_file",
                         type=str,
                         required=True,
                         help="The output file to store the measured bias")
+    parser.add_argument(
+        "--model",
+        action="store",
+        type=str,
+        default="SentenceDebiasBertModel",
+        choices=[
+            "GPT2LMHeadModel",
+            "CDAGPT2LMHeadModel",
+            "DropoutGPT2LMHeadModel",
+            "DPGPT2LMHeadModel"
+        ],
+        help="Debiased model (e.g., SentenceDebiasModel) to evaluate.",
+    )
+    parser.add_argument(
+        "--load_path",
+        action="store",
+        type=str,
+        help="Path to saved CDA or Dropout model checkpoint.",
+    )
     args = parser.parse_args()  
 
+    kwargs = {}
 
-    def model_init(model_string, tokenizer_string, cuda):
-        #if model_string.startswith("gpt2"):
-        tokenizer = GPT2Tokenizer.from_pretrained(tokenizer_string)
-        model = GPT2LMHeadModel.from_pretrained(model_string)
-        #else:
-        #    tokenizer = OpenAIGPTTokenizer.from_pretrained(model_string)
-        #    model = OpenAIGPTLMHeadModel.from_pretrained(model_string)
-        model.eval()
-        if cuda:
+    # Load model and tokenizer. `load_path` can be used to override `model_name_or_path`.
+    model = getattr(models, args.model)(
+        args.load_path or args.model_name_or_path, **kwargs
+    )
+    model.eval()
+    tokenizer = transformers.AutoTokenizer.from_pretrained(args.model_name_or_path)
+    if cuda:
             model.to(device)
-        return model, tokenizer
     
     def sent_scoring(model_tokenizer, text, cuda):
         model = model_tokenizer[0]
@@ -64,9 +81,7 @@ def main():
         loss, logits = outputs[:2]
         sentence_prob = loss.item()
         return sentence_prob
-    
-    model, tokenizer = model_init(args.model_name_or_path, args.tokenizer_name_or_path, cuda=True)
-    
+        
     rows = get_becpro_english()
     i=0
     counter = 0
@@ -107,7 +122,7 @@ if __name__ == '__main__':
 
     
 # python ./bias-bench-main/experiments/bias-becpro-gpt2.py --model_name_or_path "C:\Users\cmatz\master-thesis\fplm\models\ft_gpt2-medium_dp_5epochs\model\best" --tokenizer_name_or_path "C:\Users\cmatz\master-thesis\fplm\models\ft_gpt2-medium_dp_5epochs\model" --output_file "./bias-bench-main/results/bec-pro/bec-pro_bias_gpt2-medium-ft-dp_5epochs_v2.txt"
-tokenizer = GPT2Tokenizer.from_pretrained("C:/Users/cmatz/master-thesis/fplm/models/ft_gpt2-medium_dp_10epochs/model")
-model = GPT2LMHeadModel.from_pretrained("C:/Users/cmatz/master-thesis/fplm\models/ft_gpt2-medium_dp_10epochs/model/best")
-prob_male = sent_scoring((model,tokenizer), "the nurse is a man", cuda=True)
-prob_femal = sent_scoring((model,tokenizer), "the nurse is a woman", cuda=True)
+#tokenizer = GPT2Tokenizer.from_pretrained("C:/Users/cmatz/master-thesis/fplm/models/ft_gpt2-medium_dp_10epochs/model")
+#model = GPT2LMHeadModel.from_pretrained("C:/Users/cmatz/master-thesis/fplm\models/ft_gpt2-medium_dp_10epochs/model/best")
+#prob_male = sent_scoring((model,tokenizer), "the nurse is a man", cuda=True)
+#prob_femal = sent_scoring((model,tokenizer), "the nurse is a woman", cuda=True)
