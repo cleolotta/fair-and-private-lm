@@ -24,7 +24,6 @@ class SEATRunner:
         tokenizer,
         tests,
         data_dir,
-        experiment_id,
         n_samples=100000,
         parametric=False,
         seed=0,
@@ -47,7 +46,6 @@ class SEATRunner:
         self._tokenizer = tokenizer
         self._tests = tests
         self._data_dir = data_dir
-        self._experiment_id = experiment_id
         self._n_samples = n_samples
         self._parametric = parametric
         self._seed = seed
@@ -108,7 +106,6 @@ class SEATRunner:
 
             results.append(
                 {
-                    "experiment_id": self._experiment_id,
                     "test": test,
                     "p_value": pval,
                     "effect_size": esize,

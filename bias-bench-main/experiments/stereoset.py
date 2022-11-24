@@ -4,11 +4,23 @@ import os
 
 import transformers
 import sys
-sys.path.append('C:/Users/cmatz/master-thesis/fair-and-private-lm/bias-evaluation')
-from bias_bench.benchmark.stereoset import StereoSetRunner
-from bias_bench.model import models
-from bias_bench.util import generate_experiment_id, _is_generative
+sys.path.append('C:/Users/cmatz/master-thesis/fair-and-private-lm/bias-bench-main')
 
+from bias_bench.benchmark.stereoset import StereoSetRunner
+
+from bias_bench.model import models
+
+def _is_generative(model):
+    # Checks if we are running an autoregressive model.
+    return model in [
+        "GPT2LMHeadModel",
+        "CDAGPT2LMHeadModel",
+        "DropoutGPT2LMHeadModel",
+        "DPGPT2LMHeadModel",
+        "LoRAGPT2LMHeadModel",
+        "DPLoRAGPT2LMHeadModel"
+    ]
+    
 thisdir = os.path.dirname(os.path.realpath(__file__))
 parser = argparse.ArgumentParser(description="Runs StereoSet benchmark.")
 parser.add_argument(
@@ -48,31 +60,17 @@ parser.add_argument(
     default=1,
     help="The batch size to use during StereoSet intrasentence evaluation.",
 )
-parser.add_argument(
-    "--seed",
-    action="store",
-    type=int,
-    default=None,
-    help="RNG seed. Used for logging in experiment ID.",
-)
+
 
 
 if __name__ == "__main__":
     args = parser.parse_args()
-
-    experiment_id = generate_experiment_id(
-        name="stereoset",
-        model=args.model,
-        model_name_or_path=args.model_name_or_path,
-        seed=args.seed,
-    )
 
     print("Running StereoSet:")
     print(f" - persistent_dir: {args.persistent_dir}")
     print(f" - model: {args.model}")
     print(f" - model_name_or_path: {args.model_name_or_path}")
     print(f" - batch_size: {args.batch_size}")
-    print(f" - seed: {args.seed}")
 
     model = getattr(models, args.model)(args.model_name_or_path)
     model.eval()
@@ -90,6 +88,6 @@ if __name__ == "__main__":
 
     os.makedirs(f"{args.persistent_dir}/results/stereoset", exist_ok=True)
     with open(
-        f"{args.persistent_dir}/results/stereoset/{experiment_id}.json", "w"
+        f"{args.persistent_dir}/results/stereoset/{args.model}.json", "w"
     ) as f:
         json.dump(results, f, indent=2)

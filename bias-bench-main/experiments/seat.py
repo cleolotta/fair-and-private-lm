@@ -3,11 +3,11 @@ import json
 import os
 import sys
 sys.path.append('C:/Users/cmatz/master-thesis/fair-and-private-lm/bias-bench-main')
-import transformers
 
+
+import transformers
 from bias_bench.benchmark.seat import SEATRunner
 from bias_bench.model import models
-from bias_bench.util import generate_experiment_id
 
 thisdir = os.path.dirname(os.path.realpath(__file__))
 parser = argparse.ArgumentParser(description="Runs SEAT benchmark.")
@@ -61,10 +61,6 @@ parser.add_argument(
 if __name__ == "__main__":
     args = parser.parse_args()
 
-    experiment_id = generate_experiment_id(
-        name="seat", model=args.model, model_name_or_path=args.model_name_or_path
-    )
-
     print("Running SEAT benchmark:")
     print(f" - persistent_dir: {args.persistent_dir}")
     print(f" - tests: {args.tests}")
@@ -79,7 +75,6 @@ if __name__ == "__main__":
     tokenizer = transformers.AutoTokenizer.from_pretrained(args.model_name_or_path)
 
     runner = SEATRunner(
-        experiment_id=experiment_id,
         tests=args.tests,
         data_dir=f"{args.persistent_dir}/data/seat",
         n_samples=args.n_samples,
@@ -91,5 +86,5 @@ if __name__ == "__main__":
     print(results)
 
     os.makedirs(f"{args.persistent_dir}/results/seat", exist_ok=True)
-    with open(f"{args.persistent_dir}/results/seat/{experiment_id}-gpt2-small-pretrained.txt", "w") as f:
+    with open(f"{args.persistent_dir}/results/seat/gpt2-medium-pretrained.txt", "w") as f:
         json.dump(results, f)

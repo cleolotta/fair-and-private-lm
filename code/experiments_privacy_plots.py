@@ -4,17 +4,13 @@ import pandas as pd
 import numpy as np
 import seaborn as sns
 
-
+# python ./code/experiments_privacy_plots.py --cda_model ./models/cda_model --baseline_model ./models/baseline_lora_model --dp_model ./models/dp_model --cda_dp_model ./models/cda_dp_model
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--cda_model",
                         type=str,
                         required=True,
                         help="path to model that is debiased with cda")
-    parser.add_argument("--dropout_model",
-                        type=str,
-                        required=True,
-                        help="path to model that is debiased with dropout")
     parser.add_argument("--baseline_model",
                         type=str,
                         required=True,
@@ -27,10 +23,6 @@ if __name__ == '__main__':
                         type=str,
                         required=True,
                         help="path to model that is debiased with cda and differentially private")
-    parser.add_argument("--dropout_dp_model",
-                        type=str,
-                        required=True,
-                        help="path to model that is debiased with dropout and differentially private")
     args = parser.parse_args()
 
     def pareto_frontier(Xs, Ys, maxX = True, maxY = True):
@@ -128,27 +120,36 @@ if __name__ == '__main__':
         return data_exposure
 
 
-    def plot_linear(xlabel,ylabel,title,var,data_mia_aug, data_mia_dropout, data_mia_full, data_mia_dp, data_mia_dp_aug, data_mia_dropout_dp, f_name):
+    def plot_linear(xlabel,ylabel,title,var,data_mia_aug, data_mia_full, data_mia_dp, data_mia_dp_aug, f_name):
         plt.figure(figsize=(10, 5))
         ax = sns.lineplot(data=data_mia_aug[var],  palette='Set2',linewidth=2.5)
         ax.set(xlabel=xlabel, ylabel=ylabel, title=title, xticks=[i+1 for i in range(len(data_mia_aug[var]))])
         
-        ax2 = sns.lineplot(data=data_mia_dropout[var], palette='Set2', linewidth=2.5)
-        ax2.set(xlabel=xlabel, ylabel=ylabel, title=title, xticks=[i+1 for i in range(len(data_mia_dropout[var]))])
+        ax2 = sns.lineplot(data=data_mia_full[var], palette='Set2', linewidth=2.5)
+        ax2.set(xlabel=xlabel, ylabel=ylabel, title=title, xticks=[i+1 for i in range(len(data_mia_full[var]))])
         
-        ax3 = sns.lineplot(data=data_mia_full[var], palette='Set2', linewidth=2.5)
-        ax3.set(xlabel=xlabel, ylabel=ylabel, title=title, xticks=[i+1 for i in range(len(data_mia_full[var]))])
+        ax3 = sns.lineplot(data=data_mia_dp[var], palette='Set2', linewidth=2.5)
+        ax3.set(xlabel=xlabel, ylabel=ylabel, title=title, xticks=[i+1 for i in range(len(data_mia_dp[var]))])
+        
+        ax4 = sns.lineplot(data=data_mia_dp_aug[var], palette='Set2', linewidth=2.5)
+        ax4.set(xlabel=xlabel, ylabel=ylabel, title=title, xticks=[i+1 for i in range(len(data_mia_dp_aug[var]))])
+        
+        ax4.legend(title='Fine-tuning Method',labels=['FT with CDA Debiasing','FT Baseline Model', 'FT with DP', 'FT with DP and CDA'])
+        
+        #plt.savefig(f_name, transparent=True)
+
+        plt.show()
+    
+    def plot_2_linear(xlabel,ylabel,title,var,data_mia, data_mia_dp, f_name):
+        plt.figure(figsize=(10, 5))
+        
+        ax3 = sns.lineplot(data=data_mia[var], palette='Set2', linewidth=2.5)
+        ax3.set(xlabel=xlabel, ylabel=ylabel, title=title, xticks=[i+1 for i in range(len(data_mia[var]))])
         
         ax4 = sns.lineplot(data=data_mia_dp[var], palette='Set2', linewidth=2.5)
         ax4.set(xlabel=xlabel, ylabel=ylabel, title=title, xticks=[i+1 for i in range(len(data_mia_dp[var]))])
         
-        ax5 = sns.lineplot(data=data_mia_dp_aug[var], palette='Set2', linewidth=2.5)
-        ax5.set(xlabel=xlabel, ylabel=ylabel, title=title, xticks=[i+1 for i in range(len(data_mia_dp_aug[var]))])
-        
-        ax6 = sns.lineplot(data=data_mia_dropout_dp[var], palette='Set2', linewidth=2.5)
-        ax6.set(xlabel=xlabel, ylabel=ylabel, title=title, xticks=[i+1 for i in range(len(data_mia_dropout_dp[var]))])
-        
-        ax6.legend(title='Fine-tuning Method',labels=['FT with CDA Debiasing',"FT with Dropout Debiasing",'FT Baseline Model', 'FT with DP', 'FT with DP and CDA', 'FT with DP and Dropout Debiasing'])
+        ax4.legend(title='Fine-tuning Method',labels=['FT Baseline Model', 'FT with DP'])
         
         #plt.savefig(f_name, transparent=True)
 
@@ -188,19 +189,23 @@ if __name__ == '__main__':
     data_cda = get_data_mia(args.cda_model + "/stdout",hue='Debiased model')
     data_baseline =  get_data_mia(args.baseline_model + "/stdout", hue = 'Baseline model')
     data_lora_dp = get_data_mia(args.dp_model + "/stdout", hue = 'DP model')
-    data_lora_dp_cda = get_data_mia(args.cda_dp_model + "/stdout", hue = 'DP model')
-    data_dropout = get_data_mia(args.dropout_model + "/stdout", hue = 'DP model')
-    data_lora_dp_dropout = get_data_mia(args.dropout_dp_model + "/stdout", hue = 'DP model')
+    data_lora_dp_cda = get_data_mia(args.cda_dp_model + "/stdout", hue = 'DP + CDA model')
 
     df_cda = pd.DataFrame.from_dict(data_cda)
     df_baseline = pd.DataFrame.from_dict(data_baseline)
     df_dp = pd.DataFrame.from_dict(data_lora_dp)
     df_dp_cda = pd.DataFrame.from_dict(data_lora_dp_cda)
-    df_dropout = pd.DataFrame.from_dict(data_dropout)
-    df_dp_dropout = pd.DataFrame.from_dict(data_lora_dp_dropout)
 
-    df_all= pd.concat([df_cda, df_dropout, df_baseline, df_dp, df_dp_cda,df_dp_dropout], axis=0)
+    df_all= pd.concat([df_cda, df_baseline, df_dp, df_dp_cda], axis=0)
     #data_exposure = get_data_exposure('/home/tr33/Documents/efficient_ft/gen/stdout-exposure')    
+
+    #baseline vs. dp
+    ylabel = 'MIA Recall'
+    xlabel='Epoch'
+    title = 'MIA recall  vs. Epoch'
+    var = 'attack1'
+    f_name ='mia-epoch.pdf'
+    plot_2_linear(xlabel,ylabel,title,var, df_baseline, df_dp,f_name)
 
 
     ylabel = 'MIA Recall'
@@ -208,7 +213,7 @@ if __name__ == '__main__':
     title = 'MIA recall  vs. Epoch'
     var = 'attack1'
     f_name ='mia-epoch.pdf'
-    plot_linear(xlabel,ylabel,title,var,df_cda, df_dropout, df_baseline, df_dp, df_dp_cda,df_dp_dropout,f_name)
+    plot_linear(xlabel,ylabel,title,var,df_cda, df_baseline, df_dp, df_dp_cda,f_name)
 
 
 
@@ -218,7 +223,7 @@ if __name__ == '__main__':
     var = 'valperp'
     f_name ='valperp-epoch.pdf'
 
-    plot_linear(xlabel,ylabel,title,var, df_cda, df_dropout, df_baseline, df_dp, df_dp_cda,df_dp_dropout, f_name)
+    plot_linear(xlabel,ylabel,title,var, df_cda, df_baseline, df_dp, df_dp_cda, f_name)
 
 
     ylabel = 'Generalization Gap'
@@ -227,7 +232,7 @@ if __name__ == '__main__':
     var = 'gen_gap'
     f_name ='gengap-epoch.pdf'
 
-    plot_linear(xlabel,ylabel,title,var,df_cda, df_dropout, df_baseline, df_dp, df_dp_cda,df_dp_dropout, f_name)
+    plot_linear(xlabel,ylabel,title,var,df_cda, df_baseline, df_dp, df_dp_cda, f_name)
 
 
     xlabel = 'valperp'

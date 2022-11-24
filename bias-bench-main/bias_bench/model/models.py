@@ -1,339 +1,52 @@
 from functools import partial
+import torch
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 import torch
 import transformers
+import dp_transformers
+from dp_transformers.layers.dp_merged_linear import mark_only_lora_as_trainable
+from dp_transformers.module_modification import convert_gpt2_attention_to_lora
 
-
-class BertModel:
-    def __new__(self, model_name_or_path):
-        return transformers.BertModel.from_pretrained(model_name_or_path)
-
-
-class AlbertModel:
-    def __new__(self, model_name_or_path):
-        return transformers.AlbertModel.from_pretrained(model_name_or_path)
-
-
-class RobertaModel:
-    def __new__(self, model_name_or_path):
-        return transformers.RobertaModel.from_pretrained(model_name_or_path)
+ # GPT2Model has different layers than the model I want to load
+def prepare_weights(pretrained_state_dict):
+    # GPT2Model has different layer names than the models we trained
+    # Here, the model weights of the checkpoint we load get manipulated, so that they match those of GPT2Model
+    length = len(pretrained_state_dict)
+    j = 0
+    for key, value in list(pretrained_state_dict.items()):
+    #for i in pretrained_state_dict.copy():
+        if j < length:
+            name_old = key
+            name_new = name_old.replace('transformer.', '')
+            pretrained_state_dict[name_new] = pretrained_state_dict.pop(name_old) 
+            j +=1
+    pretrained_state_dict.pop('lm_head.weight')
+    return(pretrained_state_dict)
 
 
 class GPT2Model:
     def __new__(self, model_name_or_path):
         return transformers.GPT2Model.from_pretrained(model_name_or_path)
 
-
-class BertForMaskedLM:
-    def __new__(self, model_name_or_path):
-        return transformers.BertForMaskedLM.from_pretrained(model_name_or_path)
-
-
-class AlbertForMaskedLM:
-    def __new__(self, model_name_or_path):
-        return transformers.AlbertForMaskedLM.from_pretrained(model_name_or_path)
-
-
-class RobertaForMaskedLM:
-    def __new__(self, model_name_or_path):
-        return transformers.RobertaForMaskedLM.from_pretrained(model_name_or_path)
-
-
 class GPT2LMHeadModel:
     def __new__(self, model_name_or_path):
         return transformers.GPT2LMHeadModel.from_pretrained(model_name_or_path)
-
-
-class _SentenceDebiasModel:
-    def __init__(self, model_name_or_path, bias_direction):
-        def _hook(module, input_, output, bias_direction):
-            # Debias the last hidden state.
-            x = output["last_hidden_state"]
-
-            # Ensure that everything is on the same device.
-            bias_direction = bias_direction.to(x.device)
-
-            # Debias the representation.
-            for t in range(x.size(1)):
-                x[:, t] = x[:, t] - torch.ger(
-                    torch.matmul(x[:, t], bias_direction), bias_direction
-                ) / bias_direction.dot(bias_direction)
-
-            # Update the output.
-            output["last_hidden_state"] = x
-
-            return output
-
-        self.func = partial(_hook, bias_direction=bias_direction)
-
-
-class _INLPModel:
-    def __init__(self, model_name_or_path, projection_matrix):
-        def _hook(module, input_, output, projection_matrix):
-            # Debias the last hidden state.
-            x = output["last_hidden_state"]
-
-            # Ensure that everything is on the same device.
-            projection_matrix = projection_matrix.to(x.device)
-
-            for t in range(x.size(1)):
-                x[:, t] = torch.matmul(projection_matrix, x[:, t].T).T
-
-            # Update the output.
-            output["last_hidden_state"] = x
-
-            return output
-
-        self.func = partial(_hook, projection_matrix=projection_matrix)
-
-
-class SentenceDebiasBertModel(_SentenceDebiasModel):
-    def __new__(self, model_name_or_path, bias_direction):
-        super().__init__(self, model_name_or_path, bias_direction)
-        model = transformers.BertModel.from_pretrained(model_name_or_path)
-        model.encoder.register_forward_hook(self.func)
-        return model
-
-
-class SentenceDebiasAlbertModel(_SentenceDebiasModel):
-    def __new__(self, model_name_or_path, bias_direction):
-        super().__init__(self, model_name_or_path, bias_direction)
-        model = transformers.AlbertModel.from_pretrained(model_name_or_path)
-        model.encoder.register_forward_hook(self.func)
-        return model
-
-
-class SentenceDebiasRobertaModel(_SentenceDebiasModel):
-    def __new__(self, model_name_or_path, bias_direction):
-        super().__init__(self, model_name_or_path, bias_direction)
-        model = transformers.RobertaModel.from_pretrained(model_name_or_path)
-        model.encoder.register_forward_hook(self.func)
-        return model
-
-
-class SentenceDebiasGPT2Model(_SentenceDebiasModel):
-    def __new__(self, model_name_or_path, bias_direction):
-        super().__init__(self, model_name_or_path, bias_direction)
-        model = transformers.GPT2Model.from_pretrained(model_name_or_path)
-        model.register_forward_hook(self.func)
-        return model
-
-
-class SentenceDebiasBertForMaskedLM(_SentenceDebiasModel):
-    def __new__(self, model_name_or_path, bias_direction):
-        super().__init__(self, model_name_or_path, bias_direction)
-        model = transformers.BertForMaskedLM.from_pretrained(model_name_or_path)
-        model.bert.register_forward_hook(self.func)
-        return model
-
-
-class SentenceDebiasAlbertForMaskedLM(_SentenceDebiasModel):
-    def __new__(self, model_name_or_path, bias_direction):
-        super().__init__(self, model_name_or_path, bias_direction)
-        model = transformers.AlbertForMaskedLM.from_pretrained(model_name_or_path)
-        model.albert.register_forward_hook(self.func)
-        return model
-
-
-class SentenceDebiasRobertaForMaskedLM(_SentenceDebiasModel):
-    def __new__(self, model_name_or_path, bias_direction):
-        super().__init__(self, model_name_or_path, bias_direction)
-        model = transformers.RobertaForMaskedLM.from_pretrained(model_name_or_path)
-        model.roberta.register_forward_hook(self.func)
-        return model
-
-
-class SentenceDebiasGPT2LMHeadModel(_SentenceDebiasModel):
-    def __new__(self, model_name_or_path, bias_direction):
-        super().__init__(self, model_name_or_path, bias_direction)
-        model = transformers.GPT2LMHeadModel.from_pretrained(model_name_or_path)
-        model.transformer.register_forward_hook(self.func)
-        return model
-
-
-class INLPBertModel(_INLPModel):
-    def __new__(self, model_name_or_path, projection_matrix):
-        super().__init__(self, model_name_or_path, projection_matrix)
-        model = transformers.BertModel.from_pretrained(model_name_or_path)
-        model.encoder.register_forward_hook(self.func)
-        return model
-
-
-class INLPAlbertModel(_INLPModel):
-    def __new__(self, model_name_or_path, projection_matrix):
-        super().__init__(self, model_name_or_path, projection_matrix)
-        model = transformers.AlbertModel.from_pretrained(model_name_or_path)
-        model.encoder.register_forward_hook(self.func)
-        return model
-
-
-class INLPRobertaModel(_INLPModel):
-    def __new__(self, model_name_or_path, projection_matrix):
-        super().__init__(self, model_name_or_path, projection_matrix)
-        model = transformers.RobertaModel.from_pretrained(model_name_or_path)
-        model.encoder.register_forward_hook(self.func)
-        return model
-
-
-class INLPGPT2Model(_INLPModel):
-    def __new__(self, model_name_or_path, projection_matrix):
-        super().__init__(self, model_name_or_path, projection_matrix)
-        model = transformers.GPT2Model.from_pretrained(model_name_or_path)
-        model.register_forward_hook(self.func)
-        return model
-
-
-class INLPBertForMaskedLM(_INLPModel):
-    def __new__(self, model_name_or_path, projection_matrix):
-        super().__init__(self, model_name_or_path, projection_matrix)
-        model = transformers.BertForMaskedLM.from_pretrained(model_name_or_path)
-        model.bert.register_forward_hook(self.func)
-        return model
-
-
-class INLPAlbertForMaskedLM(_INLPModel):
-    def __new__(self, model_name_or_path, projection_matrix):
-        super().__init__(self, model_name_or_path, projection_matrix)
-        model = transformers.AlbertForMaskedLM.from_pretrained(model_name_or_path)
-        model.albert.register_forward_hook(self.func)
-        return model
-
-
-class INLPRobertaForMaskedLM(_INLPModel):
-    def __new__(self, model_name_or_path, projection_matrix):
-        super().__init__(self, model_name_or_path, projection_matrix)
-        model = transformers.RobertaForMaskedLM.from_pretrained(model_name_or_path)
-        model.roberta.register_forward_hook(self.func)
-        return model
-
-
-class INLPGPT2LMHeadModel(_INLPModel):
-    def __new__(self, model_name_or_path, projection_matrix):
-        super().__init__(self, model_name_or_path, projection_matrix)
-        model = transformers.GPT2LMHeadModel.from_pretrained(model_name_or_path)
-        model.transformer.register_forward_hook(self.func)
-        return model
-
-
-class CDABertModel:
-    def __new__(self, model_name_or_path):
-        model = transformers.BertModel.from_pretrained(model_name_or_path)
-        return model
-
-
-class CDAAlbertModel:
-    def __new__(self, model_name_or_path):
-        model = transformers.AlbertModel.from_pretrained(model_name_or_path)
-        return model
-
-
-class CDARobertaModel:
-    def __new__(self, model_name_or_path):
-        model = transformers.RobertaModel.from_pretrained(model_name_or_path)
-        return model
-
-
+    
 class CDAGPT2Model:
     def __new__(self, model_name_or_path):
         model = transformers.GPT2Model.from_pretrained(model_name_or_path)
         return model
-
-
-class CDABertForMaskedLM:
-    def __new__(self, model_name_or_path):
-        model = transformers.BertForMaskedLM.from_pretrained(model_name_or_path)
-        return model
-
-
-class CDAAlbertForMaskedLM:
-    def __new__(self, model_name_or_path):
-        model = transformers.AlbertForMaskedLM.from_pretrained(model_name_or_path)
-        return model
-
-
-class CDARobertaForMaskedLM:
-    def __new__(self, model_name_or_path):
-        model = transformers.RobertaForMaskedLM.from_pretrained(model_name_or_path)
-        return model
-
-
-class CDAGPT2LMHeadModel:
-    def __new__(self, model_name_or_path):
-        model = transformers.GPT2LMHeadModel.from_pretrained(model_name_or_path)
-        return model
-
-
-class DropoutBertModel:
-    def __new__(self, model_name_or_path):
-        model = transformers.BertModel.from_pretrained(model_name_or_path)
-        return model
-
-
-class DropoutAlbertModel:
-    def __new__(self, model_name_or_path):
-        model = transformers.AlbertModel.from_pretrained(model_name_or_path)
-        return model
-
-
-class DropoutRobertaModel:
-    def __new__(self, model_name_or_path):
-        model = transformers.RobertaModel.from_pretrained(model_name_or_path)
-        return model
-
 
 class DropoutGPT2Model:
     def __new__(self, model_name_or_path):
         model = transformers.GPT2Model.from_pretrained(model_name_or_path)
         return model
 
-
-class DropoutBertForMaskedLM:
-    def __new__(self, model_name_or_path):
-        model = transformers.BertForMaskedLM.from_pretrained(model_name_or_path)
-        return model
-
-
-class DropoutAlbertForMaskedLM:
-    def __new__(self, model_name_or_path):
-        model = transformers.AlbertForMaskedLM.from_pretrained(model_name_or_path)
-        return model
-
-
-class DropoutRobertaForMaskedLM:
-    def __new__(self, model_name_or_path):
-        model = transformers.RobertaForMaskedLM.from_pretrained(model_name_or_path)
-        return model
-
-
 class DropoutGPT2LMHeadModel:
     def __new__(self, model_name_or_path):
         model = transformers.GPT2LMHeadModel.from_pretrained(model_name_or_path)
         return model
-
-
-class BertForSequenceClassification:
-    def __new__(self, model_name_or_path, config):
-        model = transformers.BertForSequenceClassification.from_pretrained(
-            model_name_or_path, config=config
-        )
-        return model
-
-
-class AlbertForSequenceClassification:
-    def __new__(self, model_name_or_path, config):
-        model = transformers.AlbertForSequenceClassification.from_pretrained(
-            model_name_or_path, config=config
-        )
-        return model
-
-
-class RobertaForSequenceClassification:
-    def __new__(self, model_name_or_path, config):
-        model = transformers.RobertaForSequenceClassification.from_pretrained(
-            model_name_or_path, config=config
-        )
-        return model
-
 
 class GPT2ForSequenceClassification:
     def __new__(self, model_name_or_path, config):
@@ -342,143 +55,13 @@ class GPT2ForSequenceClassification:
         )
         return model
 
-
-class SentenceDebiasBertForSequenceClassification(_SentenceDebiasModel):
-    def __new__(self, model_name_or_path, bias_direction, config):
-        super().__init__(self, model_name_or_path, bias_direction)
-        model = transformers.BertForSequenceClassification.from_pretrained(
-            model_name_or_path, config=config
-        )
-        model.bert.encoder.register_forward_hook(self.func)
-        return model
-
-
-class SentenceDebiasAlbertForSequenceClassification(_SentenceDebiasModel):
-    def __new__(self, model_name_or_path, bias_direction, config):
-        super().__init__(self, model_name_or_path, bias_direction)
-        model = transformers.AlbertForSequenceClassification.from_pretrained(
-            model_name_or_path, config=config
-        )
-        model.albert.encoder.register_forward_hook(self.func)
-        return model
-
-
-class SentenceDebiasRobertaForSequenceClassification(_SentenceDebiasModel):
-    def __new__(self, model_name_or_path, bias_direction, config):
-        super().__init__(self, model_name_or_path, bias_direction)
-        model = transformers.RobertaForSequenceClassification.from_pretrained(
-            model_name_or_path, config=config
-        )
-        model.roberta.encoder.register_forward_hook(self.func)
-        return model
-
-
-class SentenceDebiasGPT2ForSequenceClassification(_SentenceDebiasModel):
-    def __new__(self, model_name_or_path, bias_direction, config):
-        super().__init__(self, model_name_or_path, bias_direction)
-        model = transformers.GPT2ForSequenceClassification.from_pretrained(
-            model_name_or_path, config=config
-        )
-        model.transformer.register_forward_hook(self.func)
-        return model
-
-
-class INLPBertForSequenceClassification(_INLPModel):
-    def __new__(self, model_name_or_path, projection_matrix, config):
-        super().__init__(self, model_name_or_path, projection_matrix)
-        model = transformers.BertForSequenceClassification.from_pretrained(
-            model_name_or_path, config=config
-        )
-        model.bert.encoder.register_forward_hook(self.func)
-        return model
-
-
-class INLPAlbertForSequenceClassification(_INLPModel):
-    def __new__(self, model_name_or_path, projection_matrix, config):
-        super().__init__(self, model_name_or_path, projection_matrix)
-        model = transformers.AlbertForSequenceClassification.from_pretrained(
-            model_name_or_path, config=config
-        )
-        model.albert.encoder.register_forward_hook(self.func)
-        return model
-
-
-class INLPRobertaForSequenceClassification(_INLPModel):
-    def __new__(self, model_name_or_path, projection_matrix, config):
-        super().__init__(self, model_name_or_path, projection_matrix)
-        model = transformers.RobertaForSequenceClassification.from_pretrained(
-            model_name_or_path, config=config
-        )
-        model.roberta.encoder.register_forward_hook(self.func)
-        return model
-
-
-class INLPGPT2ForSequenceClassification(_INLPModel):
-    def __new__(self, model_name_or_path, projection_matrix, config):
-        super().__init__(self, model_name_or_path, projection_matrix)
-        model = transformers.GPT2ForSequenceClassification.from_pretrained(
-            model_name_or_path, config=config
-        )
-        model.transformer.register_forward_hook(self.func)
-        return model
-
-
-class CDABertForSequenceClassification:
-    def __new__(self, model_name_or_path, config):
-        model = transformers.BertForSequenceClassification.from_pretrained(
-            model_name_or_path, config=config
-        )
-        return model
-
-
-class CDAAlbertForSequenceClassification:
-    def __new__(self, model_name_or_path, config):
-        model = transformers.AlbertForSequenceClassification.from_pretrained(
-            model_name_or_path, config=config
-        )
-        return model
-
-
-class CDARobertaForSequenceClassification:
-    def __new__(self, model_name_or_path, config):
-        model = transformers.RobertaForSequenceClassification.from_pretrained(
-            model_name_or_path, config=config
-        )
-        return model
-
-
 class CDAGPT2ForSequenceClassification:
     def __new__(self, model_name_or_path, config):
         model = transformers.GPT2ForSequenceClassification.from_pretrained(
             model_name_or_path, config=config
         )
         return model
-
-
-class DropoutBertForSequenceClassification:
-    def __new__(self, model_name_or_path, config):
-        model = transformers.BertForSequenceClassification.from_pretrained(
-            model_name_or_path, config=config
-        )
-        return model
-
-
-class DropoutAlbertForSequenceClassification:
-    def __new__(self, model_name_or_path, config):
-        model = transformers.AlbertForSequenceClassification.from_pretrained(
-            model_name_or_path, config=config
-        )
-        return model
-
-
-class DropoutRobertaForSequenceClassification:
-    def __new__(self, model_name_or_path, config):
-        model = transformers.RobertaForSequenceClassification.from_pretrained(
-            model_name_or_path, config=config
-        )
-        return model
-
-
+    
 class DropoutGPT2ForSequenceClassification:
     def __new__(self, model_name_or_path, config):
         model = transformers.GPT2ForSequenceClassification.from_pretrained(
@@ -486,19 +69,116 @@ class DropoutGPT2ForSequenceClassification:
         )
         return model
     
-class DPGPT2Model:
-    def __new__(self, model_name_or_path):
+class LoRAGPT2Model:
+    def __new__(self, model_name_or_path, load_path,lora_dim,lora_alpha, lora_dropout):
         model = transformers.GPT2Model.from_pretrained(model_name_or_path)
+        model = convert_gpt2_attention_to_lora(
+            model, r=lora_dim, lora_alpha=lora_alpha, lora_dropout=lora_dropout,
+            enable_lora=[True, False, True], merge_weights=False
+        )
+        mark_only_lora_as_trainable(model)
+        model_path = load_path + "/pytorch_model.bin"
+        checkpoint = torch.load(model_path, map_location=device)
+        checkpoint = prepare_weights(checkpoint)
+        model.load_state_dict(checkpoint, strict=False)
         return model
 
+class LoRAGPT2LMHeadModel:
+    def __new__(self, model_name_or_path, load_path,lora_dim, lora_alpha, lora_dropout):
+        model = transformers.GPT2LMHeadModel.from_pretrained(model_name_or_path)
+        model = convert_gpt2_attention_to_lora(
+            model, r=lora_dim, lora_alpha=lora_alpha, lora_dropout=lora_dropout,
+            enable_lora=[True, False, True], merge_weights=False
+        )
+        mark_only_lora_as_trainable(model)
+        model_path = load_path + "/pytorch_model.bin"
+        checkpoint = torch.load(model_path, map_location=device)
+        model.load_state_dict(checkpoint)
+        return model
+
+class LoRAGPT2ForSequenceClassification:
+    def __new__(self, model_name_or_path, config, lora_dim, lora_alpha, lora_dropout):
+        model = transformers.GPT2ForSequenceClassification.from_pretrained("gpt2-medium", config=config)
+        model = convert_gpt2_attention_to_lora(
+            model, r=lora_dim, lora_alpha=lora_alpha, lora_dropout=lora_dropout,
+            enable_lora=[True, False, True], merge_weights=False
+        )
+        mark_only_lora_as_trainable(model)
+        model_path = model_name_or_path + "/pytorch_model.bin"
+        checkpoint = torch.load(model_path, map_location=device)
+        checkpoint.pop("lm_head.weight") 
+        model.load_state_dict(checkpoint, strict=False)
+        return model
+
+    
+class DPLoRAGPT2Model:
+    def __new__(self, model_name_or_path, load_path, lora_dim, lora_alpha, lora_dropout):
+        model = transformers.GPT2Model.from_pretrained(
+            model_name_or_path
+        )
+        model = convert_gpt2_attention_to_lora(
+            model, r=lora_dim, lora_alpha=lora_alpha, lora_dropout=lora_dropout,
+            enable_lora=[True, False, True], merge_weights=False
+        )
+        mark_only_lora_as_trainable(model)
+        dp_transformers.register_grad_sampler_gpt2_lora()
+        model_path = load_path + "/pytorch_model.bin"
+        checkpoint = torch.load(model_path, map_location=device)
+        checkpoint = prepare_weights(checkpoint)
+        model.load_state_dict(checkpoint)
+        return model
+
+class DPLoRAGPT2LMHeadModel:
+    def __new__(self, model_name_or_path,load_path, lora_dim,lora_alpha, lora_dropout):
+        model = transformers.GPT2LMHeadModel.from_pretrained(model_name_or_path)
+        model = convert_gpt2_attention_to_lora(
+            model, r=lora_dim, lora_alpha=lora_alpha, lora_dropout=lora_dropout,
+            enable_lora=[True, False, True], merge_weights=False
+        )
+        mark_only_lora_as_trainable(model)
+        dp_transformers.register_grad_sampler_gpt2_lora()
+    
+        model_path = load_path + "/pytorch_model.bin"
+        checkpoint = torch.load(model_path, map_location=device)
+        checkpoint.pop("lm_head.weight") 
+        model.load_state_dict(checkpoint, strict=False)
+        return model
+    
 class DPGPT2LMHeadModel:
     def __new__(self, model_name_or_path):
-        model = transformers.GPT2LMHeadModel.from_pretrained(model_name_or_path)
+        model = transformers.GPT2LMHeadModel.from_pretrained(
+            model_name_or_path
+        )
+        return model
+
+class DPLoRAGPT2ForSequenceClassification:
+    def __new__(self, model_name_or_path,config,lora_dim,lora_alpha, lora_dropout):
+        model = transformers.GPT2ForSequenceClassification.from_pretrained("gpt2-medium", config=config)
+        model.state_dict
+        model = convert_gpt2_attention_to_lora(
+            model, r=lora_dim, lora_alpha=lora_alpha, lora_dropout=lora_dropout,
+            enable_lora=[True, False, True], merge_weights=False
+        )
+        mark_only_lora_as_trainable(model)
+        dp_transformers.register_grad_sampler_gpt2_lora()
+        model_path = model_name_or_path + "/pytorch_model.bin"
+        checkpoint = torch.load(model_path, map_location=device)
+        checkpoint.pop("lm_head.weight") 
+        model.load_state_dict(checkpoint, strict=False)
+        return model
+class LoRAptGPT2ForSequenceClassification:
+    def __new__(self, model_name_or_path, config, lora_dim, lora_alpha, lora_dropout):
+        model = transformers.GPT2ForSequenceClassification.from_pretrained(model_name_or_path, config=config)
+        model = convert_gpt2_attention_to_lora(
+            model, r=lora_dim, lora_alpha=lora_alpha, lora_dropout=lora_dropout,
+            enable_lora=[True, False, True], merge_weights=False
+        )
+        mark_only_lora_as_trainable(model)
         return model
 
 class DPGPT2ForSequenceClassification:
     def __new__(self, model_name_or_path, config):
         model = transformers.GPT2ForSequenceClassification.from_pretrained(
             model_name_or_path, config=config
-        )
+            )
         return model

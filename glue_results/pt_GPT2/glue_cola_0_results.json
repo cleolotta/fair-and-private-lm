@@ -1,0 +1,14 @@
+{
+    "epoch": 3.0,
+    "eval_loss": 0.5158886313438416,
+    "eval_matthews_correlation": 0.4803084441285113,
+    "eval_runtime": 3.6085,
+    "eval_samples": 1043,
+    "eval_samples_per_second": 289.04,
+    "eval_steps_per_second": 36.303,
+    "train_loss": 0.4642002333456011,
+    "train_runtime": 203.7477,
+    "train_samples": 8551,
+    "train_samples_per_second": 125.906,
+    "train_steps_per_second": 3.946
+}

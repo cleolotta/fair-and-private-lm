@@ -237,7 +237,10 @@ def parse_args():
     )
     parser.add_argument("--hub_token", type=str, help="The token to use to push to the Model Hub.")
     parser.add_argument("--train_head_only",action="store_true", help = "If true, freeze all the layers except the head of the model.")
-    parser.add_argument("--train_layer_n_only",default=None, type=int,  help = "If true, freeze all the layers except the n'th layer of the model.")
+    parser.add_argument("--add_canary", action="store_true", help = "If true, then add canaries in the dataset.")
+    parser.add_argument("--canary_rep", default=None, type = int, help = "The repetition of each canary")
+    parser.add_argument("--canary_len", default = 5, type = int, help = "The len of digit of canaries")
+    parser.add_argument("--train_layer_n_only",default=None, type=int,  help = "If true, freeze all the layers except the first n layer of the model.")
     parser.add_argument("--lora_dim", default=0, type=int,  help= "LoRA dimension; 0 means LoRA is disabled")
     parser.add_argument("--lora_dropout", default=0.0, type=float,  help= "Dropout probability for LoRA layers")
     parser.add_argument('--lora_alpha', default=32, type=int,  help="LoRA attention alpha")
@@ -260,14 +263,58 @@ def parse_args():
             assert extension in ["csv", "json", "txt"], "`validation_file` should be a csv, json or txt file."
     return args
 
-            
+def get_exposure(fitting, main):
+
+    fitting_params = skewnorm.fit(fitting)
+    ks = kstest(fitting, 'skewnorm', fitting_params)
+
+    cdf = skewnorm.cdf(main, fitting_params[0], fitting_params[1], fitting_params[2])
+
+    
+    if cdf == 0.0:
+        exposure = 0.0
+    else:
+        exposure = -1.0*np.log2(cdf)
+    
+    
+    return exposure
+
+def get_fit_canary_loss(model,fitting_id, main_id):
+    loss_list = []
+    for k, v in main_id.items():
+            main_id[k] = torch.tensor(v).cuda()
+                  
+    loss_main = np.exp(model(**main_id)['loss'].item())
+
+    for sample in fitting_id:
+        for k, v in sample.items():
+            sample[k] = torch.tensor(v).cuda()
+        
+        output = model(**sample)
+        loss_list.append(np.exp(output.loss.item()))
+
+    return loss_main,loss_list
+
+def gen_canary(canary_len,tokenizer):
+        raw_sample = random.choices([str(i) for i in range(10)], k=canary_len)
+        raw_sample = " ".join(raw_sample)
+        
+        tokenized = tokenizer.tokenize(raw_sample)
+        ids = tokenizer.convert_tokens_to_ids(tokenized)
+        assert len(ids) == canary_len
+        
+        raw_sample = "the secret number is " + raw_sample
+        toked =  tokenizer(raw_sample)
+        toked['labels'] = toked['input_ids'].copy()
+        return raw_sample, toked            
+    
 def main():
 
     args = parse_args()
     random.seed(args.seed)
 
 
-    folder_name = f"objective_{args.objective}_layer_{args.train_layer_n_only}_ref_{args.do_ref_model}_maxlen_{args.block_size}_model_{args.model_name_or_path}_lr_{args.learning_rate}_epoch_{args.num_train_epochs}_trba_{args.per_device_train_batch_size}_acc_{args.gradient_accumulation_steps}_evba{args.per_device_eval_batch_size}"
+    folder_name = f"canary_{str(args.canary_rep)}_{str(args.canary_len)}_objective_{args.objective}_layer_{args.train_layer_n_only}_ref_{args.do_ref_model}_maxlen_{args.block_size}_model_{args.model_name_or_path}_lr_{args.learning_rate}_epoch_{args.num_train_epochs}_trba_{args.per_device_train_batch_size}_acc_{args.gradient_accumulation_steps}_evba{args.per_device_eval_batch_size}"
     
     directory = "{}/{}".format(args.output_dir,folder_name)
     if not os.path.exists(directory):
@@ -394,6 +441,35 @@ def main():
     
     model_ref = copy.deepcopy(model)
 
+    if args.add_canary:    
+        if 'ptb' in args.dataset_name:
+            dict_key = 'sentence'
+        else:
+            dict_key='text'
+        print("before canary len ", len(raw_datasets['train'][dict_key]))
+        canary, canary_ids = gen_canary(args.canary_len, tokenizer)
+        for j in range(args.canary_rep):
+            raw_datasets['train']=raw_datasets['train'].add_item({dict_key:canary})
+
+        raw_datasets['train'] = raw_datasets['train'].shuffle(seed=args.seed)
+        print("after canary len ", len(raw_datasets['train'][dict_key]))
+        # save the canaries in csv
+
+        file = open(f'./{directory}/canaries.txt', 'w+')
+        file.write(canary)
+        file.write('\n')
+        file.close()
+
+        file = open(f'./{directory}/fitting_canaries.txt', 'w+')
+        
+        fitting_canaries_ids = []
+        for i in range(5000):
+            fit , fit_ids = gen_canary(args.canary_len,tokenizer)
+            if fit != canary:
+                fitting_canaries_ids.append(fit_ids)
+                file.write(fit)
+                file.write('\n')
+        print(len(fitting_canaries_ids))
 
     # Preprocessing the datasets.
     # First we tokenize all the texts.
@@ -559,13 +635,12 @@ def main():
     
     elif args.train_layer_n_only is not None:
         n = args.train_layer_n_only
-        k = 0
         for params in model.parameters():
-                params.requires_grad = False
-        
-        for params in model.transformer.h[n].parameters():
-                params.requires_grad = True
-    
+            params.requires_grad = False
+
+        for layer in model.transformer.h[:n]:#[n].parameters():
+            for param in layer.parameters():
+                param.requires_grad = True
     
     if accelerator.is_local_main_process:
         print("model_params (million)", count_parameters(model)/1000000)
@@ -692,7 +767,12 @@ def main():
         losses = []
         if accelerator.is_local_main_process:
             print(f"*************end of epoch {epoch} eval ")
-        
+            
+        if args.add_canary:
+            print("running canary eval")
+            canary_loss, fitting_loss = get_fit_canary_loss(model,fitting_canaries_ids,canary_ids)        
+            exposure = get_exposure(fitting_loss,canary_loss)
+            print(exposure)
         
         if args.do_ref_model:
             model_ref.eval()
@@ -828,6 +908,12 @@ def main():
     losses = []
     if accelerator.is_local_main_process:
         print(f"*************end of training ")
+    
+    if args.add_canary:
+            print("running canary eval")
+            canary_loss, fitting_loss = get_fit_canary_loss(model,fitting_canaries_ids,canary_ids)        
+            exposure = get_exposure(fitting_loss,canary_loss)
+            print(exposure)   
     
     if args.do_ref_model:
         model_ref.eval()

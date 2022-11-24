@@ -3,7 +3,6 @@ datasets==1.18.4
 dp_transformers==0.1.0
 huggingface_hub==0.8.1
 matplotlib==3.5.3
-nltk==3.7
 numpy==1.23.2
 opacus==0.15.0
 pandas==1.4.3

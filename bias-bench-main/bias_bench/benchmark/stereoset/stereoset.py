@@ -8,7 +8,7 @@ from tqdm import tqdm
 from bias_bench.benchmark.stereoset import dataloader
 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = "cpu" #torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 # Prompts for self-debiasing.

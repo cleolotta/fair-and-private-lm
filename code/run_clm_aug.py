@@ -370,7 +370,6 @@ def main():
     # Set padding token.
     tokenizer.pad_token = tokenizer.eos_token
     config.pad_token_id = config.eos_token_id
-
     
     if args.model_name_or_path:
         model = AutoModelForCausalLM.from_pretrained(
@@ -408,6 +407,8 @@ def main():
             )
         return output
     
+    #raw_text = raw_datasets['train']['text']
+    #tokenized_test = tokenize_function(raw_datasets['train'])
     
     with accelerator.main_process_first():
         tokenized_datasets = raw_datasets.map(
@@ -468,6 +469,7 @@ def main():
             load_from_cache_file=not args.overwrite_cache,
             desc=f"Grouping texts in chunks of {block_size}",
         )
+    #lm_datasets2 = lm_datasets
     
     def pad_dataset(examples):
         # add padding to each batch
@@ -505,6 +507,9 @@ def main():
               as it is simpler.
         """
         outputs = []
+        og_index = list()
+        #original =  []
+        count = 0
         for input_ids in examples["input_ids"]:
             # For simplicity, decode each example. It is easier to apply augmentation
             # on text as opposed to token IDs.
@@ -534,7 +539,10 @@ def main():
                     sent_list.append(s) #append all sentences without new line character
                 sentence = " ".join(sent_list)
                 outputs.append(sentence)
+                og_index.append(count)
                 count += 1 
+
+                #original.append(sentence)
             
         # There are potentially no counterfactual examples.
         if not outputs:
@@ -564,7 +572,7 @@ def main():
         # https://github.com/uclanlp/corefBias/blob/master/WinoBias/wino/generalized_swaps.txt
         # creates list with word pairs --> [ [pair1[0], pair1[1]] , [pair2[0], pair2[1]] , ... ]
         #file_wordlist = open('/ukp-storage-1/matzken/fplm/datasets/wordpairs/cda_word_pairs_gender.txt', 'r', encoding="utf-8") 
-        file_wordlist = open('/ukp/storage/work/matzken/fplm/ft_gpt2/experiments/data/wordpairs/cda_word_pairs_gender.txt', 'r', encoding="utf-8") 
+        file_wordlist = open('/storage/ukp/work/matzken/fplm/ft_gpt2/experiments/data/wordpairs/cda_word_pairs_gender.txt', 'r', encoding="utf-8") 
         lines_wordlist = file_wordlist.readlines()
         for line in lines_wordlist:
             word_pair = line.split()
@@ -575,7 +583,7 @@ def main():
         # https://github.com/uclanlp/corefBias/blob/master/WinoBias/wino/extra_gendered_words.txt
         # appends additional word pairs from extra file
         #file_wordlist = open('/ukp-storage-1/matzken/fplm/datasets/wordpairs/cda_word_pairs_gender_extra.txt', 'r', encoding="utf-8") 
-        file_wordlist = open('/ukp/storage/work/matzken/fplm/ft_gpt2/experiments/data/wordpairs/cda_word_pairs_gender_extra.txt', 'r', encoding="utf-8") 
+        file_wordlist = open('/storage/ukp/work/matzken/fplm/ft_gpt2/experiments/data/wordpairs/cda_word_pairs_gender_extra.txt', 'r', encoding="utf-8") 
         
         lines_wordlist = file_wordlist.readlines()
         for line in lines_wordlist:
@@ -588,7 +596,7 @@ def main():
         # https://www.ssa.gov/oact/babynames/limits.html
         # gets the top 100 names of 2019 for boys and girls and appends the pairs (male, female) and (female, male) to the word pair list
         #file_wordlist = open('/ukp-storage-1/matzken/fplm/datasets/wordpairs/cda_word_pairs_names.txt', 'r', encoding="utf-8") 
-        file_wordlist = open('/ukp/storage/work/matzken/fplm/ft_gpt2/experiments/data/wordpairs/cda_word_pairs_names.txt', 'r', encoding="utf-8") 
+        file_wordlist = open('/storage/ukp/work/matzken/fplm/ft_gpt2/experiments/data/wordpairs/cda_word_pairs_names.txt', 'r', encoding="utf-8") 
         
         lines_wordlist = file_wordlist.readlines()
         for line in lines_wordlist:
@@ -613,7 +621,7 @@ def main():
             # https://github.com/uclanlp/corefBias/blob/master/WinoBias/wino/generalized_swaps.txt
             # creates list with word pairs --> [ [pair1[0], pair1[1]] , [pair2[0], pair2[1]] , ... ]
             #file_wordlist = open('/ukp-storage-1/matzken/fplm/datasets/wordpairs/cda_word_pairs_gender.txt', 'r', encoding="utf-8") 
-            file_wordlist = open('/ukp/storage/work/matzken/fplm/ft_gpt2/experiments/data/wordpairs/cda_word_pairs_gender.txt', 'r', encoding="utf-8") 
+            file_wordlist = open('/storage/ukp/work/matzken/fplm/ft_gpt2/experiments/data/wordpairs/cda_word_pairs_gender.txt', 'r', encoding="utf-8") 
             
             lines_wordlist = file_wordlist.readlines()
             for line in lines_wordlist:
@@ -624,7 +632,7 @@ def main():
             # https://github.com/uclanlp/corefBias/blob/master/WinoBias/wino/extra_gendered_words.txt
             # appends additional word pairs from extra file
             #file_wordlist = open('/ukp-storage-1/matzken/fplm/datasets/wordpairs/cda_word_pairs_gender_extra.txt', 'r', encoding="utf-8") 
-            file_wordlist = open('/ukp/storage/work/matzken/fplm/ft_gpt2/experiments/data/wordpairs/cda_word_pairs_gender_extra.txt', 'r', encoding="utf-8") 
+            file_wordlist = open('/storage/ukp/work/matzken/fplm/ft_gpt2/experiments/data/wordpairs/cda_word_pairs_gender_extra.txt', 'r', encoding="utf-8") 
             
             lines_wordlist = file_wordlist.readlines()
             for line in lines_wordlist:
@@ -636,7 +644,7 @@ def main():
             # https://www.ssa.gov/oact/babynames/limits.html
             # gets the top 100 names of 2019 for boys and girls and appends the pairs (male, female) and (female, male) to the word pair list
             #file_wordlist = open('/ukp-storage-1/matzken/fplm/datasets/wordpairs/cda_word_pairs_names.txt', 'r', encoding="utf-8") 
-            file_wordlist = open('/ukp/storage/work/matzken/fplm/ft_gpt2/experiments/data/wordpairs/cda_word_pairs_names.txt', 'r', encoding="utf-8") 
+            file_wordlist = open('/storage/ukp/work/matzken/fplm/ft_gpt2/experiments/data/wordpairs/cda_word_pairs_names.txt', 'r', encoding="utf-8") 
             
             lines_wordlist = file_wordlist.readlines()
             for line in lines_wordlist:
@@ -691,17 +699,16 @@ def main():
     eval_dataset = tokenized_datasets['validation']
 
     # for differential privacy:
-    if args.add_dp:
-        if args.lora_dim > 0:
-            model = convert_gpt2_attention_to_lora(
-                model, r=args.lora_dim, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout,
-                enable_lora=[True, False, True], merge_weights=False
-            )
-            mark_only_lora_as_trainable(model)
-            if args.lora_dim > 0:
-                dp_transformers.register_grad_sampler_gpt2_lora()
-            else:
-                dp_transformers.register_grad_sampler_gpt2()
+    if args.lora_dim > 0:
+        model = convert_gpt2_attention_to_lora(
+            model, r=args.lora_dim, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout,
+            enable_lora=[True, False, True], merge_weights=False
+        )
+        mark_only_lora_as_trainable(model)
+    if args.lora_dim > 0 and args.add_dp:
+            dp_transformers.register_grad_sampler_gpt2_lora()
+    else:
+        dp_transformers.register_grad_sampler_gpt2()
         
     # Split weights in two groups, one with weight decay and the other not.
     no_decay = ["bias", "LayerNorm.weight"]
@@ -754,13 +761,15 @@ def main():
     
     elif args.train_layer_n_only is not None:
         n = args.train_layer_n_only
-        k = 0
         for params in model.parameters():
-                params.requires_grad = False
+            params.requires_grad = False
         
-        for params in model.transformer.h[n].parameters():
+        for layer in model.transformer.h[:n]:
+            for params in layer.parameters():
                 params.requires_grad = True
-    
+    if accelerator.is_local_main_process:
+        print("model_params (million) ", count_parameters(model)/1000000)
+
     # Prepare everything with our `accelerator`.
     model, optimizer, train_dataloader, eval_dataloader, mia_train_dataloader, mia_eval_dataloader = accelerator.prepare(
         model, optimizer, train_dataloader, eval_dataloader, mia_train_dataloader, mia_eval_dataloader

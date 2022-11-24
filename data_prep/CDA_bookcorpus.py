@@ -95,7 +95,7 @@ if __name__ == '__main__':
     f.close()
 
     # open the output text file to append sentence by sentence
-    with open(args.output_file,'a+', encoding='utf-8') as f, open(args.output_file1, 'a+', encoding="utf-8") as f1, open(args.output_file2,'a+', encoding='utf-8') as f2:
+    with open(args.output_file,'a+', encoding='utf-8') as f:
 
 
 # ---------------------------------------------BOOKCORPUS---------------------------------------------
@@ -142,29 +142,11 @@ if __name__ == '__main__':
                     continue
                 s_words_og = s_words.copy()
                 f.write(" ".join(s_words) + " . \n")
-                sent_count_aug +=1
-    
-                 # backup - if augmented sentence is added, then this is added to f2
+                sent_count += 1
 
-    #           # check if the sentence contains words of the word list and needs to be augmented
-                for j in range(len(s_words)):
-                    for word_pair in word_pairs:
-                        if s_words[j] == word_pair[0]: # if there is a match, switch with the corresponding partner word
-                            s_words[j] = word_pair[1]
-                            edit = True
-                            break
-                # if there was a match, add the augmented sentence to new file and the original sentence to the file that is used for the MI Attack later
-                if edit:
-                    f.write(' '.join(s_words) + ' . ')
-                    sent_count_aug +=1
-                    f2.write(" ".join(s_words_og) + " . ")
-                    sent_count_og_mia +=1 
-            if sent_count_og == 500:
-                break
         print("...done\n\n")
-        print(f"sentence_count_og {sent_count_og}")
-        print(f"sentence_count_aug {sent_count_aug}")
-        print(f"sentence_count_og_mia {sent_count_og_mia}")
+        print(f"sentence_count_og {sent_count}")
 
 
-## python data_prep/CDA_bookcorpus.py --output_file "./test/augmented1.txt" --output_file1 "./test/original1.txt" --output_file2 "./test/original_mia1.txt" --skip_sentences 120 --block_size 100 
+
+## python data_prep/CDA_bookcorpus.py --output_file "./data_prep/data.txt" --skip_sentences 90 --block_size 100
