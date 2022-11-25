@@ -1,5 +1,0 @@
-{
-    "python.analysis.extraPaths": [
-        "./nenv1/lib/python3.10/site-packages"
-    ]
-}
