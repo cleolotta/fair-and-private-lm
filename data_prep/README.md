@@ -1,7 +1,10 @@
 Code taken and modified from:
-https://github.com/mireshghallah/ft-memorization
+https://aclanthology.org/2021.findings-emnlp.411/
 
-**run_clm.py** is used to perform causal language modeling with the possibility of adding differential privacy (by setting add_dp) and to use dropout regularization for debiasing by setting --dropout_debias = True.
+**CDA_bookcorpus** is used to create a subset of the bookcorpus. Decide of how many sentences a block should contain and how many of those sentences to skip in each block.
+We used: python data_prep/CDA_bookcorpus.py --output_file "./data_prep/data.txt" --skip_sentences 120 --block_size 128
 
-**run_clm_aug.py** is used to perform causal language modeling with the possibility of adding differential privacy (by setting add_dp) and to modify the data with counterfactual data augmentation by setting --counterfactual_augmentation = "gender"
+**cda_train_test_split.py** is used to separate the dataset into train (80%) and test (20%) data.
+
+**cda_words.py** is used during the counterfactual data augmentation process in code/run_clm_aug.py
 
