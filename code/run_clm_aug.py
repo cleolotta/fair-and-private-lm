@@ -1,3 +1,4 @@
+# https://github.com/mireshghallah/ft-memorization
 #!/usr/bin/env python
 # coding=utf-8
 # Copyright 2021 The HuggingFace Inc. team. All rights reserved.
@@ -13,7 +14,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# for dp_cda and cda
+
 """
 Fine-tuning the library models for causal language modeling (GPT, GPT-2, CTRL, ...)
 on a text file or a dataset without using HuggingFace Trainer.
@@ -44,7 +45,7 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from functools import partial
 import csv 
-#from data_prep import cda_words
+from data_prep import cda_words
 import transformers
 from accelerate import Accelerator, DistributedType
 from huggingface_hub import Repository
@@ -62,8 +63,6 @@ from transformers import (
     set_seed,
 )
 
-
-#from torch import AdamW
 from transformers.utils.versions import require_version
 from transformers.testing_utils import CaptureLogger
 import datasets
@@ -559,110 +558,6 @@ def main():
         augmented["labels"] = augmented["input_ids"].copy()
         return augmented
     
-        # checks if list already contains the word pair
-    def is_pair_in_list(all_pairs, pair):
-        for p in all_pairs:
-            if (p[0] == pair[0]) and p[1] == pair[1]:
-                return True
-        return False
-
-    # returns word list of noun pairs of Zhao et al. and 100 self-created name pairs
-    def get_gender_word_list():
-        word_list = []
-        # https://github.com/uclanlp/corefBias/blob/master/WinoBias/wino/generalized_swaps.txt
-        # creates list with word pairs --> [ [pair1[0], pair1[1]] , [pair2[0], pair2[1]] , ... ]
-        #file_wordlist = open('/ukp-storage-1/matzken/fplm/datasets/wordpairs/cda_word_pairs_gender.txt', 'r', encoding="utf-8") 
-        file_wordlist = open('/storage/ukp/work/matzken/fplm/ft_gpt2/experiments/data/wordpairs/cda_word_pairs_gender.txt', 'r', encoding="utf-8") 
-        lines_wordlist = file_wordlist.readlines()
-        for line in lines_wordlist:
-            word_pair = line.split()
-            #print(word_pair)
-            word_list.append(word_pair[0])
-            word_list.append(word_pair[1])
-
-        # https://github.com/uclanlp/corefBias/blob/master/WinoBias/wino/extra_gendered_words.txt
-        # appends additional word pairs from extra file
-        #file_wordlist = open('/ukp-storage-1/matzken/fplm/datasets/wordpairs/cda_word_pairs_gender_extra.txt', 'r', encoding="utf-8") 
-        file_wordlist = open('/storage/ukp/work/matzken/fplm/ft_gpt2/experiments/data/wordpairs/cda_word_pairs_gender_extra.txt', 'r', encoding="utf-8") 
-        
-        lines_wordlist = file_wordlist.readlines()
-        for line in lines_wordlist:
-            word_pair = line.split()
-            if not is_pair_in_list(word_list, word_pair):
-                word_list.append(word_pair[0])
-                word_list.append(word_pair[1])
-                #word_list.append([word_pair[1], word_pair[0]]) # both 'dircetions' needed: (male, female) and (female, male)
-            
-        # https://www.ssa.gov/oact/babynames/limits.html
-        # gets the top 100 names of 2019 for boys and girls and appends the pairs (male, female) and (female, male) to the word pair list
-        #file_wordlist = open('/ukp-storage-1/matzken/fplm/datasets/wordpairs/cda_word_pairs_names.txt', 'r', encoding="utf-8") 
-        file_wordlist = open('/storage/ukp/work/matzken/fplm/ft_gpt2/experiments/data/wordpairs/cda_word_pairs_names.txt', 'r', encoding="utf-8") 
-        
-        lines_wordlist = file_wordlist.readlines()
-        for line in lines_wordlist:
-            word_pair = line.split()
-            if not is_pair_in_list(word_list, word_pair):
-                word_list.append(word_pair[0])
-                word_list.append(word_pair[1])
-        word_list.append("his")
-        word_list.append("her")
-        word_list.append("seth")
-        word_list.append("sarah")
-        word_list.append("himself")
-        word_list.append("herself")
-        word_list.append("male")
-        word_list.append("female")
-        word_list.append("hers")
-        
-        return word_list
-
-    def get_gender_word_pairs():
-            word_pairs = []
-            # https://github.com/uclanlp/corefBias/blob/master/WinoBias/wino/generalized_swaps.txt
-            # creates list with word pairs --> [ [pair1[0], pair1[1]] , [pair2[0], pair2[1]] , ... ]
-            #file_wordlist = open('/ukp-storage-1/matzken/fplm/datasets/wordpairs/cda_word_pairs_gender.txt', 'r', encoding="utf-8") 
-            file_wordlist = open('/storage/ukp/work/matzken/fplm/ft_gpt2/experiments/data/wordpairs/cda_word_pairs_gender.txt', 'r', encoding="utf-8") 
-            
-            lines_wordlist = file_wordlist.readlines()
-            for line in lines_wordlist:
-                word_pair = line.split()
-                #print(word_pair)
-                word_pairs.append(word_pair)
-
-            # https://github.com/uclanlp/corefBias/blob/master/WinoBias/wino/extra_gendered_words.txt
-            # appends additional word pairs from extra file
-            #file_wordlist = open('/ukp-storage-1/matzken/fplm/datasets/wordpairs/cda_word_pairs_gender_extra.txt', 'r', encoding="utf-8") 
-            file_wordlist = open('/storage/ukp/work/matzken/fplm/ft_gpt2/experiments/data/wordpairs/cda_word_pairs_gender_extra.txt', 'r', encoding="utf-8") 
-            
-            lines_wordlist = file_wordlist.readlines()
-            for line in lines_wordlist:
-                word_pair = line.split()
-                if not is_pair_in_list(word_pairs, word_pair):
-                    word_pairs.append(word_pair)
-                    word_pairs.append([word_pair[1], word_pair[0]]) # both 'dircetions' needed: (male, female) and (female, male)
-                
-            # https://www.ssa.gov/oact/babynames/limits.html
-            # gets the top 100 names of 2019 for boys and girls and appends the pairs (male, female) and (female, male) to the word pair list
-            #file_wordlist = open('/ukp-storage-1/matzken/fplm/datasets/wordpairs/cda_word_pairs_names.txt', 'r', encoding="utf-8") 
-            file_wordlist = open('/storage/ukp/work/matzken/fplm/ft_gpt2/experiments/data/wordpairs/cda_word_pairs_names.txt', 'r', encoding="utf-8") 
-            
-            lines_wordlist = file_wordlist.readlines()
-            for line in lines_wordlist:
-                word_pair = line.split()
-                if not is_pair_in_list(word_pairs, word_pair):
-                    word_pairs.append(word_pair)
-            
-            # do some adjustments
-            word_pairs.append(["his", "her"])
-            word_pairs.append(["her", "his"])
-            word_pairs.append(["seth", "sarah"])
-            word_pairs.append(["sarah", "seth"])
-            word_pairs.append(["himself", "herself"])
-            word_pairs.append(["herself", "himself"])
-            word_pairs.append(["male", "female"])
-            word_pairs.append(["female", "male"])
-            word_pairs.append(["hers", "his"])
-            return word_pairs
 
     if args.counterfactual_augmentation:
         
@@ -670,9 +565,9 @@ def main():
 
         # Load the bias attribute words.
         print("Get gender word pairs...")
-        word_pairs = get_gender_word_pairs()
+        word_pairs = cda_words.get_gender_word_pairs()
         print("...done\n")
-        bias_word_list = get_gender_word_list()
+        bias_word_list = cda_words.get_gender_word_list()
         counterfactual_augmentation_func = partial(
             gender_counterfactual_augmentation,
             bias_attribute_words=word_pairs,
@@ -868,7 +763,6 @@ def main():
                             best_loss=torch.mean(losses)
                             if accelerator.is_local_main_process:
                                 print(f"saving model here at step {completed_steps} and epoch {epoch} with ppl {perplexity}")
-                            
                             if args.output_dir is not None:
                                 accelerator.wait_for_everyone()
                                 unwrapped_model = accelerator.unwrap_model(model)
