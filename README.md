@@ -4,8 +4,8 @@ This repository contains the code for my master thesis entitled "Trade-Offs Betw
 The aim of the work was to investigate the influence of debiasing on leakage and the influence of differential privacy on gender bias in GPT-2.
 The repository is divided as follows:
 
-#### bias-evaluation
-contains the code to evaluate the models for bias. The frameworks are SEAT (May et al., 2019), StereoSet (Nadeem et al.,) and BEC-Pro (Bartl et al., 2020).
+### bias-evaluation
+This folder contains the code to evaluate the models for bias. The frameworks are SEAT (May et al., 2019), StereoSet (Nadeem et al.,) and BEC-Pro (Bartl et al., 2020).
 ##### Sources
 SEAT:
 @article{may2019measuring,
@@ -36,8 +36,8 @@ SEAT and StereoSet code:
   year={2021}
 }
 
-#### code 
-contains the code to run the causal language modeling and to perform membership inference attack
+### code 
+This folder contains the code to run the causal language modeling and to perform membership inference attack
 ##### Sources
 source code with with own adjustments:
 @article{mireshghallah2022memorization,
@@ -47,8 +47,8 @@ source code with with own adjustments:
   year={2022}
 }
 
-#### data_prep
-contains the code used to prepare the dataset and the data to counterfactually augment the data in the course of causal language modeling.
+### data_prep
+This folder contains the code used to prepare the dataset and the data to counterfactually augment the data in the course of causal language modeling.
 
 ##### Sources 
 code with with own adjustments:
@@ -67,8 +67,8 @@ Wordpairs:
 }
 
 
-#### glue
-contains the code used to evaluate the resulting models on the glue benchmark.
+### glue
+This folder contains the code used to evaluate the resulting models on the glue benchmark.
 
 ##### Sources
 SEAT and StereoSet code:
