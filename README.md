@@ -5,7 +5,7 @@ The aim of the work was to investigate the influence of debiasing on leakage and
 The repository is divided as follows:
 
 ### bias-evaluation
-This folder contains the code to evaluate the models for bias. The frameworks are SEAT (May et al., 2019), StereoSet (Nadeem et al.,) and BEC-Pro (Bartl et al., 2020).
+This folder contains the code to evaluate the models for a gender bias. The frameworks are SEAT (May et al., 2019), StereoSet (Nadeem et al.,) and BEC-Pro (Bartl et al., 2020).
 ##### Sources
 
 SEAT:

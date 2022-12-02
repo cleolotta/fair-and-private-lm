@@ -1,0 +1,120 @@
+Namespace(dataset_name=None, dataset_config_name=None, train_file='/storage/ukp/work/matzken/fplm/ft_gpt2/experiments/data/original-train.txt', validation_file='/storage/ukp/work/matzken/fplm/ft_gpt2/experiments/data/original-test.txt', validation_split_percentage=5, model_name_or_path='gpt2-medium', config_name=None, tokenizer_name='gpt2-medium', use_slow_tokenizer=False, do_ref_model=True, add_dp=True, per_device_train_batch_size=2, per_device_eval_batch_size=1, learning_rate=1e-05, weight_decay=0.01, num_train_epochs=5, max_train_steps=None, gradient_accumulation_steps=128, eval_steps=1000, lr_scheduler_type=<SchedulerType.CONSTANT: 'constant'>, num_warmup_steps=0, output_dir='/storage/ukp/work/matzken/fplm/ft_gpt2/experiments/sanity_check_2', seed=1234, model_type=None, block_size=512, preprocessing_num_workers=None, overwrite_cache=True, no_keep_linebreaks=False, push_to_hub=False, hub_model_id=None, hub_token=None, train_head_only=False, train_layer_n_only=None, lora_dim=4, lora_dropout=0.0, lora_alpha=32, noise_multiplier=0.6, objective='dp-sanity', per_sample_max_grad_norm=0.0, target_epsilon=None, dropout_debias=False)
+model_params (million) 0.393216
+model_params (million) 0.393216
+cuda:0
+model_params (million) 0.393216
+training epoch 0
+*************end of epoch 0 eval 
+threshold_ref is:  0.999707043170929
+threshold is:  4.178793430328369
+saving model here at step 489 and epoch 0 with ppl 91.28988503941008
+correct cnt  ref is:  6254 all is:  124923 ratio is:  0.05006283870864452
+correct cnt is:  10924 all is:  124923 ratio is:  0.08744586665385878
+epoch 0: perplexity: 91.28988503941008 perplexity_train: 89.67606498350303
+____
+0.05006283870864452
+0.08744586665385878
+91.28988503941008
+89.67606498350303
+0.050686817585091734
+0.08642054369056386
+0.3399914089347079
+0.4676022176022176
+_____
+End of epoch 0, we have epsilon 3.100746920521128 for alpha 4.4 from privacy engine
+training epoch 1
+*************end of epoch 1 eval 
+threshold_ref is:  0.9994491934776306
+threshold is:  4.177992343902588
+saving model here at step 978 and epoch 1 with ppl 91.20182199334478
+correct cnt  ref is:  6494 all is:  124923 ratio is:  0.051984022157649114
+correct cnt is:  10924 all is:  124923 ratio is:  0.08744586665385878
+epoch 1: perplexity: 91.20182199334478 perplexity_train: 89.59229281159978
+____
+0.051984022157649114
+0.08744586665385878
+91.20182199334478
+89.59229281159978
+0.05318433607633441
+0.0864525631584003
+0.350866075200676
+0.46769443963277324
+_____
+End of epoch 1, we have epsilon 3.343707321458135 for alpha 4.2 from privacy engine
+training epoch 2
+step 1000 epoch 2 perplexity: 91.2023003671932
+*************end of epoch 2 eval 
+threshold_ref is:  0.9992216229438782
+threshold is:  4.177404403686523
+saving model here at step 1467 and epoch 2 with ppl 91.12501032360309
+correct cnt  ref is:  6676 all is:  124923 ratio is:  0.05344091960647759
+correct cnt is:  10930 all is:  124923 ratio is:  0.08749389624008388
+epoch 2: perplexity: 91.12501032360309 perplexity_train: 89.51952590621963
+____
+0.05344091960647759
+0.08749389624008388
+91.12501032360309
+89.51952590621963
+0.055105504146521087
+0.08654862156190964
+0.3589904046725073
+0.4679709141274238
+_____
+End of epoch 2, we have epsilon 3.5329344236880758 for alpha 4.1 from privacy engine
+training epoch 3
+*************end of epoch 3 eval 
+threshold_ref is:  0.9989966750144958
+threshold is:  4.176687717437744
+saving model here at step 1956 and epoch 3 with ppl 91.05052096404627
+correct cnt  ref is:  6998 all is:  124923 ratio is:  0.05601850740055874
+correct cnt is:  10932 all is:  124923 ratio is:  0.08750990610215893
+epoch 3: perplexity: 91.05052096404627 perplexity_train: 89.44903601111453
+____
+0.05601850740055874
+0.08750990610215893
+91.05052096404627
+89.44903601111453
+0.057699081041273095
+0.08658064102974608
+0.36964102564102563
+0.468063008481911
+_____
+End of epoch 3, we have epsilon 3.6936165670799266 for alpha 4.1 from privacy engine
+training epoch 4
+saving model here at step 2000 and epoch 4 with ppl 91.0398845987966
+step 2000 epoch 4 perplexity: 91.0398845987966
+*************end of epoch 4 eval 
+threshold_ref is:  0.9987718462944031
+threshold is:  4.175943374633789
+saving model here at step 2440 and epoch 4 with ppl 90.97361982424175
+correct cnt  ref is:  6928 all is:  124923 ratio is:  0.05545816222793241
+correct cnt is:  10936 all is:  124923 ratio is:  0.087541925826309
+epoch 4: perplexity: 90.97361982424175 perplexity_train: 89.3759592801795
+____
+0.05545816222793241
+0.087541925826309
+90.97361982424175
+89.3759592801795
+0.05699465274887131
+0.08654862156190964
+0.36678343292808574
+0.4679709141274238
+_____
+End of epoch 4, we have epsilon 3.8340687206412065 for alpha 4.0 from privacy engine
+*************end of training 
+threshold_ref is:  0.9987718462944031
+threshold is:  4.175943374633789
+end of training epsilon privacy engine 3.8340687206412065
+correct cnt  ref is:  6928 all is:  124923 ratio is:  0.05545816222793241
+correct cnt is:  10936 all is:  124923 ratio is:  0.087541925826309
+end of training perplexity: 90.97361982424175 perplexity_train: 89.3759592801795
+____
+0.05545816222793241
+0.087541925826309
+90.97361982424175
+89.3759592801795
+0.05699465274887131
+0.08654862156190964
+0.36678343292808574
+0.4679709141274238
+_____

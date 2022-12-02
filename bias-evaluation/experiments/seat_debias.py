@@ -8,7 +8,6 @@ import transformers
 from transformers import GPT2Model
 import  sys
 sys.path.append('./bias-evaluation')
-from bias_evalution import bias_bench
 from bias_bench.model import models
 from bias_bench.benchmark.seat import SEATRunner
 import dp_transformers

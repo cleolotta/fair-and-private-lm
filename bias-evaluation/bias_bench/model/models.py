@@ -1,3 +1,5 @@
+# Adapted but modified from Meade et al. (2021) An Empirical Survey of the Effectiveness of Debiasing Techniques for Pre-trained Language Models https://github.com/McGill-NLP/bias-bench
+
 from functools import partial
 import torch
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -15,7 +17,6 @@ def prepare_weights(pretrained_state_dict):
     length = len(pretrained_state_dict)
     j = 0
     for key, value in list(pretrained_state_dict.items()):
-    #for i in pretrained_state_dict.copy():
         if j < length:
             name_old = key
             name_new = name_old.replace('transformer.', '')
@@ -152,7 +153,7 @@ class DPGPT2LMHeadModel:
         return model
 
 class DPLoRAGPT2ForSequenceClassification:
-    def __new__(self, model_name_or_path,config,lora_dim,lora_alpha, lora_dropout):
+    def __new__(self, model_name_or_path, lora_dim,lora_alpha, lora_dropout, config):
         model = transformers.GPT2ForSequenceClassification.from_pretrained("gpt2-medium", config=config)
         model.state_dict
         model = convert_gpt2_attention_to_lora(
@@ -166,9 +167,11 @@ class DPLoRAGPT2ForSequenceClassification:
         checkpoint.pop("lm_head.weight") 
         model.load_state_dict(checkpoint, strict=False)
         return model
+
 class LoRAptGPT2ForSequenceClassification:
-    def __new__(self, model_name_or_path, config, lora_dim, lora_alpha, lora_dropout):
+    def __new__(self, model_name_or_path, lora_dim,lora_alpha, lora_dropout, config):
         model = transformers.GPT2ForSequenceClassification.from_pretrained(model_name_or_path, config=config)
+        model.state_dict
         model = convert_gpt2_attention_to_lora(
             model, r=lora_dim, lora_alpha=lora_alpha, lora_dropout=lora_dropout,
             enable_lora=[True, False, True], merge_weights=False

@@ -1,8 +1,11 @@
 import json
 import os
 import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
 
-models = ["pretrained","baseline", "cda","dp", "cda_dp", "dropout", "dropout_dp"]
+
+models = ["_Pre-trained_GPT2","Baseline", "CDA","Dropout","DP", "cda_dp","dropout_dp"]
 results = {}
 glue = pd.DataFrame(columns={'model', 'test', 'epoch', 'value'})
 counter = 0
@@ -36,4 +39,12 @@ for model in models:
         glue = glue.append(results, ignore_index=True)
 #glue = glue.set_index('model')
 glue_model = glue.groupby(["model","test"]).agg('mean')
-glue_model.to_csv('glue_results.txt', decimal=",")
+glue_avg = glue_model.groupby("model").agg('mean')
+glue_avg = glue_avg.reset_index()
+fig = plt.figure(figsize=(10,5))
+ax = sns.barplot(data=glue_avg, x="model", y="value", palette='Set2',linewidth=2.5)
+ax.set(xlabel="Training Objective",title="GLUE Results", ylabel="GLUE Score ↑")
+xlabels = ["Baseline", "CDA", 'DP\n(eps=3.53)', "Dropout","Pre-trained GPT-2", "CDA + DP\n(eps=3.53)","Dropout + \n(eps=3.53)"]
+ax.set_xticklabels(xlabels)
+plt.show()
+glue_model.to_csv('./glue_results/glue_results.txt', decimal=".")

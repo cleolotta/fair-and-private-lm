@@ -34,26 +34,15 @@ def main():
 
     #dataset = load_dataset("text", data_files=args.input_file, split='train', cache_dir='cda_cache')
 
-    #dataset = dataset.train_test_split(test_size=0.2, shuffle= False)
-    print('hi')
     df = pd.read_table(args.input_file, names=['text'])
-    #df = df[:500]
-    print(df['text'][0])
     print("read into df")
-    #print(df[0])
-    #txt_a = Path(args.input_file).resolve()
-    #length = sum(1 for row in open(txt_a, "r", encoding= "utf-8"))
     length = len(df)
 
     print(length)
     ind = int(0.8 * length)
     training_data = df[:ind]
-    print(training_data['text'][0])
     testing_data = df[ind:]
-    
-    
-    #training_data, testing_data = train_test_split(df, test_size=0.2, shuffle=True)
-   
+       
     print(len(training_data))
     print(len(testing_data))
 
@@ -79,6 +68,3 @@ def main():
 if __name__ == "__main__":
     main()
     
-# python data_prep/cda_train_test_split.py --input_file "./data_prep/data.txt" --output_test "./data_prep/original-test2.txt" --output_train "./data_prep/original-train2.txt"    
-# python cda_train_test_split.py --input_file "./datasets/augmented_data.txt" --output_test "./datasets/augmented-test1.txt" --output_train "./datasets/augmented-train1.txt"    
-# python data-prep/cda_train_test_split.py --input_file "C:/Users/cmatz/master-thesis/fplm/da_data.txt" --output_test "pups1" --output_train "pups.txt"

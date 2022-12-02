@@ -2,7 +2,7 @@ import argparse
 import json
 import os
 import sys
-sys.path.append('C:/Users/cmatz/master-thesis/fair-and-private-lm/bias-bench-main')
+sys.path.append('./bias-evaluation')
 
 
 import transformers

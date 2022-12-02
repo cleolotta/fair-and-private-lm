@@ -5,7 +5,7 @@ import os
 import torch
 import transformers
 import sys
-sys.path.append('C:/Users/cmatz/master-thesis/fair-and-private-lm/bias-bench-main')
+sys.path.append('./bias-bench-main')
 
 
 from bias_bench.benchmark.stereoset import StereoSetRunner

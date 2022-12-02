@@ -1,3 +1,4 @@
+# https://github.com/mireshghallah/ft-memorization
 #!/usr/bin/env python
 # coding=utf-8
 # Copyright 2021 The HuggingFace Inc. team. All rights reserved.
@@ -13,7 +14,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# for dp_cda and cda
+
 """
 Fine-tuning the library models for causal language modeling (GPT, GPT-2, CTRL, ...)
 on a text file or a dataset without using HuggingFace Trainer.
@@ -44,7 +45,7 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from functools import partial
 import csv 
-#from data_prep import cda_words
+from data_prep import cda_words
 import transformers
 from accelerate import Accelerator, DistributedType
 from huggingface_hub import Repository
@@ -62,8 +63,6 @@ from transformers import (
     set_seed,
 )
 
-
-#from torch import AdamW
 from transformers.utils.versions import require_version
 from transformers.testing_utils import CaptureLogger
 import datasets
@@ -238,15 +237,10 @@ def parse_args():
         "--hub_model_id", type=str, help="The name of the repository to keep in sync with the local `output_dir`."
     )
     parser.add_argument("--hub_token", type=str, help="The token to use to push to the Model Hub.")
-    parser.add_argument("--train_head_only",action="store_true", help = "If true, freeze all the layers except the head of the model.")
-    parser.add_argument("--train_layer_n_only",default=None, type=int,  help = "If true, freeze all the layers except the n'th layer of the model.")
+    parser.add_argument('--counterfactual_augmentation', type=str,default="gender", help= "Does a gender-related CDA of the")
     parser.add_argument("--lora_dim", default=0, type=int,  help= "LoRA dimension; 0 means LoRA is disabled")
     parser.add_argument("--lora_dropout", default=0.0, type=float,  help= "Dropout probability for LoRA layers")
     parser.add_argument('--lora_alpha', default=32, type=int,  help="LoRA attention alpha")
-    parser.add_argument('--per_sample_max_grad_norm', default=0.0, type=float)
-    parser.add_argument('--noise_multiplier', default=None, type=float)
-    parser.add_argument('--objective', default=None, type=str)
-    parser.add_argument('--counterfactual_augmentation', type=str,default="gender", help= "Does a gender-related CDA of the")
     args = parser.parse_args()
 
     # Sanity checks
@@ -266,24 +260,16 @@ def main():
 
     args = parse_args()
     random.seed(args.seed)
-
-
-    folder_name = f"objective_{args.objective}_add_dp_{args.add_dp}_lora_{args.lora_dim}_noise_multiplier_{args.noise_multiplier}_ref_{args.do_ref_model}_maxlen_{args.block_size}_model_{args.model_name_or_path}_lr_{args.learning_rate}_epoch_{args.num_train_epochs}_trba_{args.per_device_train_batch_size}_acc_{args.gradient_accumulation_steps}_evba{args.per_device_eval_batch_size}"
     
-    directory = "{}/{}".format(args.output_dir,folder_name)
+    directory = "{}/{}".format(args.output_dir,"sanity_check")
     if not os.path.exists(directory):
         os.mkdir(directory)
     
-    log_file = os.path.join(directory, "stdout")
+    log_file = os.path.join(directory, "stdout.txt")
 
 
     # Initialize the accelerator. We will let the accelerator handle device placement for us in this example.
     accelerator = Accelerator()
-    
-    if accelerator.is_local_main_process:
-        print("Logging to {}".format(log_file))
-        
-    sys.stdout = Logger(log_file)
 
         
     # Make one log on every process with the configuration for debugging.
@@ -383,8 +369,6 @@ def main():
 
     model.resize_token_embeddings(len(tokenizer))
     
-    model_ref = copy.deepcopy(model)
-
 
     # Preprocessing the datasets.
     # First we tokenize all the texts.
@@ -559,110 +543,6 @@ def main():
         augmented["labels"] = augmented["input_ids"].copy()
         return augmented
     
-        # checks if list already contains the word pair
-    def is_pair_in_list(all_pairs, pair):
-        for p in all_pairs:
-            if (p[0] == pair[0]) and p[1] == pair[1]:
-                return True
-        return False
-
-    # returns word list of noun pairs of Zhao et al. and 100 self-created name pairs
-    def get_gender_word_list():
-        word_list = []
-        # https://github.com/uclanlp/corefBias/blob/master/WinoBias/wino/generalized_swaps.txt
-        # creates list with word pairs --> [ [pair1[0], pair1[1]] , [pair2[0], pair2[1]] , ... ]
-        #file_wordlist = open('/ukp-storage-1/matzken/fplm/datasets/wordpairs/cda_word_pairs_gender.txt', 'r', encoding="utf-8") 
-        file_wordlist = open('/storage/ukp/work/matzken/fplm/ft_gpt2/experiments/data/wordpairs/cda_word_pairs_gender.txt', 'r', encoding="utf-8") 
-        lines_wordlist = file_wordlist.readlines()
-        for line in lines_wordlist:
-            word_pair = line.split()
-            #print(word_pair)
-            word_list.append(word_pair[0])
-            word_list.append(word_pair[1])
-
-        # https://github.com/uclanlp/corefBias/blob/master/WinoBias/wino/extra_gendered_words.txt
-        # appends additional word pairs from extra file
-        #file_wordlist = open('/ukp-storage-1/matzken/fplm/datasets/wordpairs/cda_word_pairs_gender_extra.txt', 'r', encoding="utf-8") 
-        file_wordlist = open('/storage/ukp/work/matzken/fplm/ft_gpt2/experiments/data/wordpairs/cda_word_pairs_gender_extra.txt', 'r', encoding="utf-8") 
-        
-        lines_wordlist = file_wordlist.readlines()
-        for line in lines_wordlist:
-            word_pair = line.split()
-            if not is_pair_in_list(word_list, word_pair):
-                word_list.append(word_pair[0])
-                word_list.append(word_pair[1])
-                #word_list.append([word_pair[1], word_pair[0]]) # both 'dircetions' needed: (male, female) and (female, male)
-            
-        # https://www.ssa.gov/oact/babynames/limits.html
-        # gets the top 100 names of 2019 for boys and girls and appends the pairs (male, female) and (female, male) to the word pair list
-        #file_wordlist = open('/ukp-storage-1/matzken/fplm/datasets/wordpairs/cda_word_pairs_names.txt', 'r', encoding="utf-8") 
-        file_wordlist = open('/storage/ukp/work/matzken/fplm/ft_gpt2/experiments/data/wordpairs/cda_word_pairs_names.txt', 'r', encoding="utf-8") 
-        
-        lines_wordlist = file_wordlist.readlines()
-        for line in lines_wordlist:
-            word_pair = line.split()
-            if not is_pair_in_list(word_list, word_pair):
-                word_list.append(word_pair[0])
-                word_list.append(word_pair[1])
-        word_list.append("his")
-        word_list.append("her")
-        word_list.append("seth")
-        word_list.append("sarah")
-        word_list.append("himself")
-        word_list.append("herself")
-        word_list.append("male")
-        word_list.append("female")
-        word_list.append("hers")
-        
-        return word_list
-
-    def get_gender_word_pairs():
-            word_pairs = []
-            # https://github.com/uclanlp/corefBias/blob/master/WinoBias/wino/generalized_swaps.txt
-            # creates list with word pairs --> [ [pair1[0], pair1[1]] , [pair2[0], pair2[1]] , ... ]
-            #file_wordlist = open('/ukp-storage-1/matzken/fplm/datasets/wordpairs/cda_word_pairs_gender.txt', 'r', encoding="utf-8") 
-            file_wordlist = open('/storage/ukp/work/matzken/fplm/ft_gpt2/experiments/data/wordpairs/cda_word_pairs_gender.txt', 'r', encoding="utf-8") 
-            
-            lines_wordlist = file_wordlist.readlines()
-            for line in lines_wordlist:
-                word_pair = line.split()
-                #print(word_pair)
-                word_pairs.append(word_pair)
-
-            # https://github.com/uclanlp/corefBias/blob/master/WinoBias/wino/extra_gendered_words.txt
-            # appends additional word pairs from extra file
-            #file_wordlist = open('/ukp-storage-1/matzken/fplm/datasets/wordpairs/cda_word_pairs_gender_extra.txt', 'r', encoding="utf-8") 
-            file_wordlist = open('/storage/ukp/work/matzken/fplm/ft_gpt2/experiments/data/wordpairs/cda_word_pairs_gender_extra.txt', 'r', encoding="utf-8") 
-            
-            lines_wordlist = file_wordlist.readlines()
-            for line in lines_wordlist:
-                word_pair = line.split()
-                if not is_pair_in_list(word_pairs, word_pair):
-                    word_pairs.append(word_pair)
-                    word_pairs.append([word_pair[1], word_pair[0]]) # both 'dircetions' needed: (male, female) and (female, male)
-                
-            # https://www.ssa.gov/oact/babynames/limits.html
-            # gets the top 100 names of 2019 for boys and girls and appends the pairs (male, female) and (female, male) to the word pair list
-            #file_wordlist = open('/ukp-storage-1/matzken/fplm/datasets/wordpairs/cda_word_pairs_names.txt', 'r', encoding="utf-8") 
-            file_wordlist = open('/storage/ukp/work/matzken/fplm/ft_gpt2/experiments/data/wordpairs/cda_word_pairs_names.txt', 'r', encoding="utf-8") 
-            
-            lines_wordlist = file_wordlist.readlines()
-            for line in lines_wordlist:
-                word_pair = line.split()
-                if not is_pair_in_list(word_pairs, word_pair):
-                    word_pairs.append(word_pair)
-            
-            # do some adjustments
-            word_pairs.append(["his", "her"])
-            word_pairs.append(["her", "his"])
-            word_pairs.append(["seth", "sarah"])
-            word_pairs.append(["sarah", "seth"])
-            word_pairs.append(["himself", "herself"])
-            word_pairs.append(["herself", "himself"])
-            word_pairs.append(["male", "female"])
-            word_pairs.append(["female", "male"])
-            word_pairs.append(["hers", "his"])
-            return word_pairs
 
     if args.counterfactual_augmentation:
         
@@ -670,9 +550,9 @@ def main():
 
         # Load the bias attribute words.
         print("Get gender word pairs...")
-        word_pairs = get_gender_word_pairs()
+        word_pairs = cda_words.get_gender_word_pairs()
         print("...done\n")
-        bias_word_list = get_gender_word_list()
+        bias_word_list = cda_words.get_gender_word_list()
         counterfactual_augmentation_func = partial(
             gender_counterfactual_augmentation,
             bias_attribute_words=word_pairs,
@@ -698,17 +578,6 @@ def main():
     train_dataset = tokenized_datasets['train']
     eval_dataset = tokenized_datasets['validation']
 
-    # for differential privacy:
-    if args.lora_dim > 0:
-        model = convert_gpt2_attention_to_lora(
-            model, r=args.lora_dim, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout,
-            enable_lora=[True, False, True], merge_weights=False
-        )
-        mark_only_lora_as_trainable(model)
-    if args.lora_dim > 0 and args.add_dp:
-            dp_transformers.register_grad_sampler_gpt2_lora()
-    else:
-        dp_transformers.register_grad_sampler_gpt2()
         
     # Split weights in two groups, one with weight decay and the other not.
     no_decay = ["bias", "LayerNorm.weight"]
@@ -723,7 +592,6 @@ def main():
         },
     ]
     optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate)
-
 
     
     # On TPU, the tie weights in our model have been disconnected, so we need to restore the ties.
@@ -750,23 +618,12 @@ def main():
     mia_eval_dataloader = DataLoader(
         mia_eval_dataset, collate_fn=data_collator, batch_size=args.per_device_eval_batch_size
     )
-
-    if args.train_head_only:
-        for params in model.parameters():
-            params.requires_grad = False
-
-        for param in model.lm_head.parameters():
-            param.requires_grad = True
-    
-    
-    elif args.train_layer_n_only is not None:
-        n = args.train_layer_n_only
-        for params in model.parameters():
-            params.requires_grad = False
-        
-        for layer in model.transformer.h[:n]:
-            for params in layer.parameters():
-                params.requires_grad = True
+    if args.lora_dim > 0:
+        model = convert_gpt2_attention_to_lora(
+            model, r=args.lora_dim, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout,
+            enable_lora=[True, False, True], merge_weights=False
+        )
+        mark_only_lora_as_trainable(model)
     if accelerator.is_local_main_process:
         print("model_params (million) ", count_parameters(model)/1000000)
 
@@ -775,30 +632,6 @@ def main():
         model, optimizer, train_dataloader, eval_dataloader, mia_train_dataloader, mia_eval_dataloader
     )
 
-    model_ref = accelerator.prepare(
-        model_ref
-    )
-
-    # for privacy objective:
-    if args.add_dp:
-        model = model.train()
-        sampling_probability = args.per_device_train_batch_size*accelerator.num_processes*args.gradient_accumulation_steps/len(train_dataset)
-        num_steps = int(args.num_train_epochs*(1/sampling_probability+1))
-        if args.noise_multiplier is None: 
-            noise_multiplier = dp_transformers.dp_utils.find_noise_multiplier(
-            sampling_probability=sampling_probability,
-            num_steps=num_steps,
-            target_delta=1.0/len(train_dataset),
-            target_epsilon=args.target_epsilon
-        )
-        else:
-            noise_multiplier = args.noise_multiplier
-        # enter PrivacyEngine
-        privacy_engine = opacus.PrivacyEngine(module=model,
-            batch_size=args.per_device_train_batch_size*args.gradient_accumulation_steps, sample_size=len(train_dataset),
-            max_grad_norm=1.0, noise_multiplier=noise_multiplier, target_delta=1.0/len(train_dataset)
-        ) # default values from https://github.com/microsoft/dp-transformers
-        privacy_engine.attach(optimizer)
     
     # Scheduler and math around the number of training steps.
     num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
@@ -813,330 +646,37 @@ def main():
         num_warmup_steps=args.num_warmup_steps,
         num_training_steps=args.max_train_steps,
     )
+    model.train()
+    #with open(log_file,'a+', encoding='utf-8') as f:
+    #    same = False
+       
+    for step, (batch1,batch2) in enumerate(zip(mia_train_dataloader, train_dataloader)):
+        print(tokenizer.decode(batch1['input_ids'][0]))
+        print(len(tokenizer.decode(batch1['input_ids'][0])))
+        #print(len(tokenizer.decode(batch1['input_ids'][0]).split(" ")[-1].split("<")))
+        print(tokenizer.decode(batch2['input_ids'][0]))
+        print(len(tokenizer.decode(batch2['input_ids'][0])))
+        #print(len(tokenizer.decode(batch2['input_ids'][0]).split(" ")[-1].split("<")))
 
-    # Train!
-    total_batch_size = args.per_device_train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
-    
+        #print(tokenizer.decode(batch1['input_ids'][0]).replace("<|endoftext|>","").split(" "))
+        #print(len(tokenizer.decode(batch1['input_ids'][0]).split(" ")))
 
-    logger.info("***** Running training *****")
-    logger.info(f"  Num mia examples = {len(mia_train_dataset)}")
-    logger.info(f"  Num examples = {len(train_dataset)}")
-    logger.info(f"  Num Epochs = {args.num_train_epochs}")
-    logger.info(f"  Instantaneous batch size per device = {args.per_device_train_batch_size}")
-    logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
-    logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
-    logger.info(f"  Total optimization steps = {args.max_train_steps}")
-    # Only show the progress bar once on each machine.
-    progress_bar = tqdm(range(args.max_train_steps), disable=not accelerator.is_local_main_process)
-    completed_steps = 0
-    best_loss = 1000000
-    for epoch in range(args.num_train_epochs):
-        model.train()
-        if accelerator.is_local_main_process:
-            print(f"training epoch {epoch}")
-        for step, batch in enumerate(train_dataloader):
-            outputs = model(**batch)
-            loss = outputs.loss
-            loss = loss / args.gradient_accumulation_steps
-            accelerator.backward(loss)
-            if step % args.gradient_accumulation_steps == 0 or step == len(train_dataloader) - 1:
-                optimizer.step()
-                lr_scheduler.step()
-                optimizer.zero_grad()
-                progress_bar.update(1)
-                completed_steps += 1
+        #print(tokenizer.decode(batch2['input_ids'][0]).split(" ").split("<"))
+        #print(len(tokenizer.decode(batch2['input_ids'][0]).split(" ").split("<")))
+        #print(tokenizer.decode(batch2['input_ids'][0]).replace("<|endoftext|>","").split(" "))
+        #print(len(tokenizer.decode(batch2['input_ids'][0]).split(" ")))
 
-                if completed_steps % args.eval_steps == 0:
-                        model.eval()
-                        losses = []
-                        for step, batch in enumerate(eval_dataloader):
-                            with torch.no_grad():
-                                outputs = model(**batch)
+            #with torch.no_grad():
 
-                            loss = outputs.loss
-                            losses.append(accelerator.gather(loss.repeat(args.per_device_eval_batch_size)))
-                            
-
-                        losses = torch.cat(losses)
-                        losses = losses[: len(eval_dataset)]
-                        try:
-                            perplexity = math.exp(torch.mean(losses))
-                        except OverflowError:
-                            perplexity = float("inf")
-                       
-                        if torch.mean(losses) < best_loss:
-                            best_loss=torch.mean(losses)
-                            if accelerator.is_local_main_process:
-                                print(f"saving model here at step {completed_steps} and epoch {epoch} with ppl {perplexity}")
-                            
-                            if args.output_dir is not None:
-                                accelerator.wait_for_everyone()
-                                unwrapped_model = accelerator.unwrap_model(model)
-                                unwrapped_model.save_pretrained(directory, save_function=accelerator.save)
-                                if accelerator.is_main_process:
-                                    tokenizer.save_pretrained(directory)   
-                            
-                        if accelerator.is_local_main_process:
-                            print(f"step {completed_steps} epoch {epoch} perplexity: {perplexity}")
-                       #exit()
-                        model.train()
-            
-            if completed_steps >= args.max_train_steps:
-                break   
-        model.eval()
-        losses = []
-        if accelerator.is_local_main_process:
-            print(f"*************end of epoch {epoch} eval ")
-        
-        
-        if args.do_ref_model:
-            model_ref.eval()
-            losses_ref = []
-            
-        for i, (batch1, batch2) in enumerate(zip(eval_dataloader, mia_eval_dataloader)):  
-            with torch.no_grad():
-                outputs = model(**batch1)
-            loss = outputs.loss
-            losses.append(accelerator.gather(loss.repeat(args.per_device_eval_batch_size)))
-        
-            if args.do_ref_model:
-            #evaluate reference model on not-augmented dataset
-                with torch.no_grad():
-                    outputs_ref =model_ref(**batch2)
-                loss_ref = outputs_ref.loss
-                losses_ref.append(accelerator.gather(loss_ref.repeat(args.per_device_eval_batch_size)))
-            
-
-        losses = torch.cat(losses)
-        losses = losses[: len(eval_dataset)]
-
-        
-        if args.do_ref_model:
-            losses_ref = torch.cat(losses_ref)
-            losses_ref = losses_ref[: len(mia_eval_dataset)]
-            sorted_ratio = sorted([l/l_ref for l,l_ref in zip (losses,losses_ref)])
-        
-        sorted_loss = sorted(losses)
-        
-        if args.do_ref_model:
-            threshold_ref = sorted_ratio[int(0.1*len(sorted_ratio))]
-            threshold = sorted_loss[int(0.1*len(losses))]
-            if accelerator.is_local_main_process:
-                print("threshold_ref is: " , threshold_ref.detach().item())
-                print("threshold is: " , threshold.detach().item())
-        else:
-            threshold = sorted_loss[int(0.1*len(losses))]
-            if accelerator.is_local_main_process:
-                print("threshold is: " , threshold.detach().item())
-        try:
-            perplexity = math.exp(torch.mean(losses))
-        except OverflowError:
-            perplexity = float("inf")
-        
-        if torch.mean(losses) < best_loss:
-            best_loss=torch.mean(losses)
-            if accelerator.is_local_main_process:
-                print(f"saving model here at step {completed_steps} and epoch {epoch} with ppl {perplexity}")
-               
-                if args.output_dir is not None:
-                    if accelerator.is_main_process:
-                        os.makedirs(directory+f"/best", exist_ok=True)
-                    accelerator.wait_for_everyone()
-                    unwrapped_model = accelerator.unwrap_model(model)
-                    unwrapped_model.save_pretrained(directory+f"/best", save_function=accelerator.save)#
-
-                    
-        if args.output_dir is not None:
-            if accelerator.is_main_process:
-                os.makedirs(directory+f"/epoch_{epoch}", exist_ok=True)
-            accelerator.wait_for_everyone()
-            unwrapped_model = accelerator.unwrap_model(model)
-            unwrapped_model.save_pretrained(directory+f"/epoch_{epoch}", save_function=accelerator.save)
-            if accelerator.is_main_process:
-                tokenizer.save_pretrained(directory)   
-          
-        ################################################    
-        #run threshold on training samples
-        losses = []
-        if args.do_ref_model:
-            model_ref.eval()
-            losses_ref = []
-            
-        for i, (batch1, batch2) in enumerate(zip(train_dataloader, mia_train_dataloader)):
-            with torch.no_grad():
-                outputs = model(**batch1)
-
-            loss = outputs.loss
-            losses.append(accelerator.gather(loss.repeat(args.per_device_train_batch_size)))
-        
-            if args.do_ref_model:
-                with torch.no_grad():
-                    outputs_ref =model_ref(**batch2)
-                loss_ref = outputs_ref.loss
-                losses_ref.append(accelerator.gather(loss_ref.repeat(args.per_device_train_batch_size)))
-            
-        
-
-        accelerator.wait_for_everyone()
-        losses = torch.cat(losses)
-        losses = losses[: len(train_dataset)]
-
-        
-        if args.do_ref_model:
-            losses_ref = torch.cat(losses_ref)
-            losses_ref = losses_ref[: len(mia_train_dataset)]
-
-            lr_rat = [l/l_r for l,l_r in zip(losses,losses_ref)]
-            
-        if args.do_ref_model:
-            guess_cor = sum([1 for sample in losses if sample<threshold])
-            guess_cor_ref =  sum([1 for sample in lr_rat if sample<threshold_ref])
-        else:    
-            guess_cor = sum([1 for sample in losses if sample<threshold])
-
-
-        
-        try:
-            perplexity_train = math.exp(torch.mean(losses))
-        except OverflowError:
-            perplexity_train = float("inf")
-        #assert(len(losses)==len(lr_rat))
-        if accelerator.is_local_main_process:
-            if args.do_ref_model:
-                print("correct cnt  ref is: " , guess_cor_ref, "all is: ", len(losses), "ratio is: ", guess_cor_ref/len(losses))
-            print("correct cnt is: " , guess_cor, "all is: ", len(losses), "ratio is: ", guess_cor/len(losses))
-            print(f"epoch {epoch}: perplexity: {perplexity} perplexity_train: {perplexity_train}")
-            print("____")
-            if args.do_ref_model:
-                print(f"{guess_cor_ref/len(losses)}\n{guess_cor/len(losses)}\n{perplexity}\n{perplexity_train}")
-                ratio = len(mia_train_dataset)/len(mia_eval_dataset)
-                guess_cor_subsampled = sum([1 for sample in losses[::int(ratio)] if sample<threshold])
-                guess_cor_ref_subsampled =  sum([1 for sample in lr_rat[::int(ratio)] if sample<threshold_ref])                
-                print(f"{guess_cor_ref_subsampled/(len(lr_rat[::int(ratio)]))}\n{guess_cor_subsampled/len(losses[::int(ratio)])}\n{guess_cor_ref_subsampled/(guess_cor_ref_subsampled+int(0.1*len(mia_eval_dataset)))}\n{guess_cor_subsampled/(guess_cor_subsampled+int(0.1*len(mia_eval_dataset)))}")
-
-            else:
-                print(f"{guess_cor/len(losses)}\n{perplexity}\n{perplexity_train}")
-            print("_____")
-        if args.add_dp:
-            eps, alpha = optimizer.privacy_engine.get_privacy_spent(1.0/len(train_dataset))
-            print("End of epoch {}, we have epsilon {} for alpha {} from privacy engine".format(epoch, eps, alpha))
-
-    model.eval()
-    losses = []
-    if accelerator.is_local_main_process:
-        print(f"*************end of training ")
-    
-    if args.do_ref_model:
-        model_ref.eval()
-        losses_ref = []
-        
-    for i, (batch1, batch2) in enumerate(zip(eval_dataloader, mia_eval_dataloader)):
-        with torch.no_grad():
-            outputs = model(**batch1)
-            
-
-        loss = outputs.loss
-        losses.append(accelerator.gather(loss.repeat(args.per_device_eval_batch_size)))
-        
-        if args.do_ref_model:
-            with torch.no_grad():
-                outputs_ref =model_ref(**batch2)
-            loss_ref = outputs_ref.loss
-            losses_ref.append(accelerator.gather(loss_ref.repeat(args.per_device_eval_batch_size)))
-    
-    accelerator.wait_for_everyone()
-    losses = torch.cat(losses)
-    losses = losses[: len(eval_dataset)]
-
-        
-    if args.do_ref_model:
-        losses_ref = torch.cat(losses_ref)
-        losses_ref = losses_ref[: len(mia_eval_dataset)]
-        sorted_ratio = sorted([l/l_ref for l,l_ref in zip (losses,losses_ref)])
-    
-    sorted_loss = sorted(losses)
-    
-    if args.do_ref_model:
-        threshold_ref = sorted_ratio[int(0.1*len(sorted_ratio))]
-        threshold = sorted_loss[int(0.1*len(losses))]
-        if accelerator.is_local_main_process:
-            print("threshold_ref is: " , threshold_ref.detach().item())
-            print("threshold is: " , threshold.detach().item())
-    else:
-        threshold = sorted_loss[int(0.1*len(losses))]
-        if accelerator.is_local_main_process:
-            print("threshold is: " , threshold.detach().item())
-    try:
-        perplexity = math.exp(torch.mean(losses))
-    except OverflowError:
-        perplexity = float("inf")
-    
-    #run threshold on training samples
-    losses = []
-    if args.do_ref_model:
-        model_ref.eval()
-        losses_ref = []
-        
-    for i, (batch1, batch2) in enumerate(zip(train_dataloader, mia_train_dataloader)):
-        with torch.no_grad():
-            outputs = model(**batch1)
-
-        loss = outputs.loss
-        losses.append(accelerator.gather(loss.repeat(args.per_device_train_batch_size)))
-        
-        if args.do_ref_model:
-            with torch.no_grad():
-                outputs_ref =model_ref(**batch2)
-            loss_ref = outputs_ref.loss
-            losses_ref.append(accelerator.gather(loss_ref.repeat(args.per_device_train_batch_size)))
-        
-    
-    accelerator.wait_for_everyone()
-    losses = torch.cat(losses)
-    losses = losses[: len(train_dataset)]
-    
-
-    
-    
-    if args.do_ref_model:
-        losses_ref = torch.cat(losses_ref)
-        losses_ref = losses_ref[: len(mia_train_dataset)]
-        lr_rat = [l/l_r for l,l_r in zip(losses,losses_ref)]
-        
-    if args.do_ref_model:
-        guess_cor = sum([1 for sample in losses if sample<threshold])
-        guess_cor_ref =  sum([1 for sample in lr_rat if sample<threshold_ref])
-    else:    
-        guess_cor = sum([1 for sample in losses if sample<threshold])
+                #output1 = model(**batch1)
+                #loss1 = output1.loss
+                #output2 = model(**batch2)
+                #loss2 = output2.loss
+                #loss_diff = loss1 - loss2
+                #if loss_diff == 0:
+                #    same = True
+                #f.write(f"augmented loss: {loss1}, original loss: {loss2}, difference: {loss_diff}, loss the same? {same}")
     
         
-    try:
-        perplexity_train = math.exp(torch.mean(losses))
-    except OverflowError:
-        perplexity_train = float("inf")
-    if args.add_dp:
-        eps_rdp, alpha = privacy_engine.get_privacy_spent(1.0/len(train_dataset))
-        print(f"end of training epsilon privacy engine {eps_rdp}")
-    if accelerator.is_local_main_process:
-        if args.do_ref_model:
-            print("correct cnt  ref is: " , guess_cor_ref, "all is: ", len(losses), "ratio is: ", guess_cor_ref/len(losses))
-        print("correct cnt is: " , guess_cor, "all is: ", len(losses), "ratio is: ", guess_cor/len(losses))
-        print(f"end of training perplexity: {perplexity} perplexity_train: {perplexity_train}")
-        print("____")
-        if args.do_ref_model:
-            print(f"{guess_cor_ref/len(losses)}\n{guess_cor/len(losses)}\n{perplexity}\n{perplexity_train}")
-            ratio = len(train_dataset)/len(eval_dataset)
-            guess_cor_subsampled = sum([1 for sample in losses[::int(ratio)] if sample<threshold])
-            guess_cor_ref_subsampled =  sum([1 for sample in lr_rat[::int(ratio)] if sample<threshold_ref])                
-            print(f"{guess_cor_ref_subsampled/(len(lr_rat[::int(ratio)]))}\n{guess_cor_subsampled/len(losses[::int(ratio)])}\n{guess_cor_ref_subsampled/(guess_cor_ref_subsampled+int(0.1*len(eval_dataset)))}\n{guess_cor_subsampled/(guess_cor_subsampled+int(0.1*len(eval_dataset)))}")
-                    
-        else:
-            print(f"{guess_cor/len(losses)}\n{perplexity}\n{perplexity_train}")
-        print("_____")
-
-
 if __name__ == "__main__":
     main()
-
-
-#"args": ["--model_name_or_path", "gpt-2", "--tokenizer_name", "gpt-2", "--train_file", "./data-prep/datasets/augmented-train1.txt", "--mia_train_file", "./data-prep/datasets/original-train1.txt", "--validation_file", "./data-prep/datasets/augmented-test1.txt", "mia_validation_file", "./data-prep/datasets/original-test1.txt", "--block_size", "1024", "--output_dir", "ft_gpt2_mia_aug_trained", "--eval_steps", "1000", "--learning_rate", "1e-5", "--do_ref_model", "--per_device_eval_batch_size", "1", "--gradient_accumulation_steps", "8", "--num_train_epochs", "3"] 
