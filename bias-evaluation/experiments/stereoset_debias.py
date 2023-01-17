@@ -5,7 +5,7 @@ import os
 import torch
 import transformers
 import sys
-sys.path.append('./bias-bench-main')
+sys.path.append('./bias-evaluation')
 
 
 from bias_bench.benchmark.stereoset import StereoSetRunner
@@ -48,6 +48,7 @@ parser.add_argument(
         "DPGPT2LMHeadModel",
         "DPLoRAGPT2LMHeadModel",
         "LoRAGPT2LMHeadModel",
+        "LoRAptGPT2LMHeadModel",
     ],
     help="Model to evalute (e.g., SentenceDebiasBertForMaskedLM).",
 )
@@ -118,7 +119,7 @@ if __name__ == "__main__":
         tokenizer = transformers.AutoTokenizer.from_pretrained(args.load_path)
     elif args.load_path is None: # load pre-trained huggingface model
         model = getattr(models, args.model)(
-        args.model_name_or_path
+        args.model_name_or_path, args.lora_dim, args.lora_alpha, args.lora_dropout
         )
         model.eval()
         tokenizer = transformers.AutoTokenizer.from_pretrained(args.model_name_or_path)

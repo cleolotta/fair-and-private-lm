@@ -54,7 +54,8 @@ parser.add_argument(
         "DropoutGPT2Model",
         "DPGPT2Model",
         "DPLoRAGPT2Model",
-        "LoRAGPT2Model",        
+        "LoRAGPT2Model",
+        "LoRAptGPT2Model"        
     ],
     help="Debiased model (e.g., SentenceDebiasModel) to evaluate.",
 )
@@ -122,7 +123,7 @@ if __name__ == "__main__":
         tokenizer = transformers.AutoTokenizer.from_pretrained(args.load_path)
     elif args.load_path is None: # load pre-trained huggingface model
         model = getattr(models, args.model)(
-        args.model_name_or_path
+        args.model_name_or_path, args.lora_dim, args.lora_alpha, args.lora_dropout
         )
         model.eval()
         tokenizer = transformers.AutoTokenizer.from_pretrained(args.model_name_or_path)

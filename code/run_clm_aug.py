@@ -37,6 +37,7 @@ from sys import path
 import sys
 from utils import Logger
 import dp_transformers
+from datasets import tqdm_utils
 import datasets
 import torch
 from datasets import load_dataset
@@ -44,7 +45,7 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from functools import partial
 import csv 
-#from data_prep import cda_words
+from data_prep import cda_words
 import transformers
 from accelerate import Accelerator, DistributedType
 from huggingface_hub import Repository
@@ -338,7 +339,7 @@ def main():
     if extension == "txt":
         extension = "text"
         dataset_args["keep_linebreaks"] = not args.no_keep_linebreaks
-    raw_datasets = load_dataset(extension, data_files=data_files, **dataset_args)#, cache_dir= "/storage/ukp/work/matzken/fplm/ft_gpt2/cache")
+    raw_datasets = load_dataset(extension, data_files=data_files, **dataset_args)
 
     # See more about loading any type of standard or custom dataset (from files, python dict, pandas DataFrame, etc) at
     # https://huggingface.co/docs/datasets/loading_datasets.html.
@@ -348,9 +349,9 @@ def main():
     # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
     # download model & vocab.
     if args.config_name:
-        config = AutoConfig.from_pretrained(args.config_name)#, cache_dir="/storage/ukp/work/matzken/fplm/ft_gpt2/cache")
+        config = AutoConfig.from_pretrained(args.config_name)
     elif args.model_name_or_path:
-        config = AutoConfig.from_pretrained(args.model_name_or_path)#, cache_dir="/storage/ukp/work/matzken/fplm/ft_gpt2/cache")
+        config = AutoConfig.from_pretrained(args.model_name_or_path)
 #    else:
 #        config = CONFIG_MAPPING[args.model_type]()
 #        logger.warning("You are instantiating a new config instance from scratch.")
@@ -460,7 +461,6 @@ def main():
     #
     # To speed up this part, we use multiprocessing. See the documentation of the map method for more information:
     # https://huggingface.co/docs/datasets/package_reference/main_classes.html#datasets.Dataset.map
-    #group_texts(tokenized_datasets['train']['text'])
     with accelerator.main_process_first():
         lm_datasets = tokenized_datasets.map(
             group_texts,
@@ -469,103 +469,13 @@ def main():
             load_from_cache_file=not args.overwrite_cache,
             desc=f"Grouping texts in chunks of {block_size}",
         )
-    #lm_datasets2 = lm_datasets
     
-    def pad_dataset(examples):
-        # add padding to each batch
-        outputs = []
-        #original =  []
-        for input_ids in examples["input_ids"]:
-            # For simplicity, decode each example. It is easier to apply augmentation
-            # on text as opposed to token IDs.
-            sentence = tokenizer.decode(input_ids)
-            sent = sentence.split()  # Tokenize based on whitespace.
-            sent_list = []
-            for s in sent:
-                s = s.strip(" \n")
-                sent_list.append(s)
-            sentence = " ".join(sent_list)
-            outputs.append(sentence)
-      
-        result = tokenizer(
-            outputs,
-            return_special_tokens_mask=False,
-            add_special_tokens=False,  # Special tokens are already added.
-            truncation=True,
-            padding="max_length",
-            max_length=args.block_size,
-        )
-        result["labels"] = result["input_ids"].copy()
-        return result
-    
-    def gender_counterfactual_augmentation(examples, bias_attribute_words):
-        """Applies gender counterfactual data augmentation to a batch of examples.
-            Notes:
-            * We apply CDA after the examples have potentially been grouped.
-            * This implementation can be made more efficient by operating on
-              token IDs as opposed to text. We currently decode each example
-              as it is simpler.
-        """
-        outputs = []
-        og_index = list()
-        #original =  []
-        count = 0
-        for input_ids in examples["input_ids"]:
-            # For simplicity, decode each example. It is easier to apply augmentation
-            # on text as opposed to token IDs.
-            sentence = tokenizer.decode(input_ids)
-            words = sentence.split()  # Tokenize based on whitespace.
-            augmented_sentence = words[:]
-
-
-            augmented = False
-            for position, word in enumerate(words):
-                for word_pair in bias_attribute_words:
-                    if word == word_pair[0]:
-                        augmented = True
-                        augmented_sentence[position] = word_pair[1]
-
-            if augmented:
-                augmented_sentence = " ".join(augmented_sentence)
-                outputs.append(augmented_sentence)
-                count += 1 
-                
-
-            else:
-                sent = sentence.split()  # Tokenize based on white space
-                sent_list = []
-                for s in sent:
-                    s = s.strip(" \n")
-                    sent_list.append(s) #append all sentences without new line character
-                sentence = " ".join(sent_list)
-                outputs.append(sentence)
-                og_index.append(count)
-                count += 1 
-
-                #original.append(sentence)
-            
-        # There are potentially no counterfactual examples.
-        if not outputs:
-            return {"input_ids": [], "attention_mask": [], "labels": []}
-        #df.to_csv("./sanity_checks/index_of_original_sentences.csv")
-        augmented = tokenizer(
-            outputs,
-            return_special_tokens_mask=False,
-            add_special_tokens=False,  # Special tokens are already added.
-            truncation=True,
-    	    padding="max_length",
-            max_length = args.block_size,
-            )
-        augmented["labels"] = augmented["input_ids"].copy()
-        return augmented
-    
-        # checks if list already contains the word pair
+    # checks if list already contains the word pair
     def is_pair_in_list(all_pairs, pair):
         for p in all_pairs:
             if (p[0] == pair[0]) and p[1] == pair[1]:
                 return True
         return False
-
     # returns word list of noun pairs of Zhao et al. and 100 self-created name pairs
     def get_gender_word_list():
         word_list = []
@@ -663,6 +573,102 @@ def main():
             word_pairs.append(["female", "male"])
             word_pairs.append(["hers", "his"])
             return word_pairs
+    def pad_dataset(examples, bias_attribute_words):
+        # add padding to each batch
+        outputs = []
+        #original =  []
+        for input_ids in examples["input_ids"]:
+            # For simplicity, decode each example. It is easier to apply augmentation
+            # on text as opposed to token IDs.
+            sentence = tokenizer.decode(input_ids)
+            sent = sentence.split()  # Tokenize based on whitespace.
+            sent_list = []
+            augmented = False
+            for position, word in enumerate(sent):
+                for word_pair in bias_attribute_words:
+                    if word == word_pair[0]:
+                        augmented = True
+            for s in sent:
+                s = s.strip(" \n")
+                sent_list.append(s)
+            sentence = " ".join(sent_list)
+            outputs.append(sentence)
+            if augmented:
+                outputs.append(sentence)
+        result = tokenizer(
+            outputs,
+            return_special_tokens_mask=False,
+            add_special_tokens=False,  # Special tokens are already added.
+            truncation=True,
+            padding="max_length",
+            max_length=args.block_size,
+        )
+        result["labels"] = result["input_ids"].copy()
+        return result
+    
+    def gender_counterfactual_augmentation(examples, bias_attribute_words):
+        """Applies gender counterfactual data augmentation to a batch of examples.
+            Notes:
+            * We apply CDA after the examples have potentially been grouped.
+            * This implementation can be made more efficient by operating on
+              token IDs as opposed to text. We currently decode each example
+              as it is simpler.
+        """
+        outputs = []
+        og_index = list()
+        #original =  []
+        count = 0
+        for input_ids in examples["input_ids"]:
+            # For simplicity, decode each example. It is easier to apply augmentation
+            # on text as opposed to token IDs.
+            sentence = tokenizer.decode(input_ids)
+            words = sentence.split()  # Tokenize based on whitespace.
+            augmented_sentence = words[:]
+
+
+            augmented = False
+            for position, word in enumerate(words):
+                for word_pair in bias_attribute_words:
+                    if word == word_pair[0]:
+                        augmented = True
+                        augmented_sentence[position] = word_pair[1]
+
+            if augmented:
+                augmented_sentence = " ".join(augmented_sentence)
+                outputs.append(augmented_sentence)
+                # 2-sided CDA: add original sentence too:
+                sent = sentence.split()  # Tokenize based on white space
+                sent_list = []
+                for s in sent:
+                    s = s.strip(" \n")
+                    sent_list.append(s) #append all sentences without new line character
+                sentence = " ".join(sent_list)
+                outputs.append(sentence)
+                
+            else:
+                sent = sentence.split()  # Tokenize based on white space
+                sent_list = []
+                for s in sent:
+                    s = s.strip(" \n")
+                    sent_list.append(s) #append all sentences without new line character
+                sentence = " ".join(sent_list)
+                outputs.append(sentence)
+                og_index.append(count)
+
+            
+        # There are potentially no counterfactual examples.
+        if not outputs:
+            return {"input_ids": [], "attention_mask": [], "labels": []}
+        augmented = tokenizer(
+            outputs,
+            return_special_tokens_mask=False,
+            add_special_tokens=False,  # Special tokens are already added.
+            truncation=True,
+    	    padding="max_length",
+            max_length = args.block_size,
+            )
+        augmented["labels"] = augmented["input_ids"].copy()
+        return augmented
 
     if args.counterfactual_augmentation:
         
@@ -670,9 +676,9 @@ def main():
 
         # Load the bias attribute words.
         print("Get gender word pairs...")
-        word_pairs = get_gender_word_pairs()
+        word_pairs = cda_words.get_gender_word_pairs()
         print("...done\n")
-        bias_word_list = get_gender_word_list()
+        bias_word_list = cda_words.get_gender_word_list()
         counterfactual_augmentation_func = partial(
             gender_counterfactual_augmentation,
             bias_attribute_words=word_pairs,
@@ -684,13 +690,17 @@ def main():
             load_from_cache_file=not args.overwrite_cache,
             desc=f"Applying counterfactual augmentation",
         )
-        
+        pad_dataset(lm_datasets['train'], word_pairs)
+        original_dataset_func = partial(
+            pad_dataset,
+            bias_attribute_words=word_pairs,
+        )
         mia_tokenized_datasets = lm_datasets.map(
-        pad_dataset,
+        original_dataset_func,
         batched=True,
         num_proc=args.preprocessing_num_workers,
         load_from_cache_file=not args.overwrite_cache,
-        desc=f"Creating a dataset for membership inference attack (loss comparison of augmented and not augmented sentence)",
+        desc=f"Creating a dataset for membership inference attack (for loss comparison of augmented and not augmented sentence)",
         )
        
     mia_train_dataset = mia_tokenized_datasets['train']
@@ -892,7 +902,7 @@ def main():
         if args.do_ref_model:
             model_ref.eval()
             losses_ref = []
-            
+        
         for i, (batch1, batch2) in enumerate(zip(eval_dataloader, mia_eval_dataloader)):  
             with torch.no_grad():
                 outputs = model(**batch1)
@@ -1095,8 +1105,6 @@ def main():
     losses = torch.cat(losses)
     losses = losses[: len(train_dataset)]
     
-
-    
     
     if args.do_ref_model:
         losses_ref = torch.cat(losses_ref)
@@ -1137,6 +1145,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-#"args": ["--model_name_or_path", "gpt-2", "--tokenizer_name", "gpt-2", "--train_file", "./data-prep/datasets/augmented-train1.txt", "--mia_train_file", "./data-prep/datasets/original-train1.txt", "--validation_file", "./data-prep/datasets/augmented-test1.txt", "mia_validation_file", "./data-prep/datasets/original-test1.txt", "--block_size", "1024", "--output_dir", "ft_gpt2_mia_aug_trained", "--eval_steps", "1000", "--learning_rate", "1e-5", "--do_ref_model", "--per_device_eval_batch_size", "1", "--gradient_accumulation_steps", "8", "--num_train_epochs", "3"] 

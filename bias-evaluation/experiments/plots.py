@@ -196,3 +196,7 @@ ax.legend(title="Model")
 plt.show()
 
 
+plt.figure(figsize=(6,4), tight_layout=True)
+ax = sns.barplot(data=rq4, x="index", y="eot_mia_recall", palette='Set2')
+ax.set(xlabel="Model",title="RQ3: How does training with debiasing as well as dp objective affect privacy in the resulting model?", ylabel="MIA Recall ↓", fontsize=100)
+plt.show()

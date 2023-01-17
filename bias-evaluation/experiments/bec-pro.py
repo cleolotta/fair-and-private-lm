@@ -62,6 +62,7 @@ def main():
             "DPGPT2LMHeadModel",
             "DPLoRAGPT2LMHeadModel",
             "LoRAGPT2LMHeadModel",
+            "LoRAptGPT2LMHeadModel"
         ],
         help="Model to evalute (e.g., SentenceDebiasBertForMaskedLM).",
     )
@@ -107,8 +108,10 @@ def main():
         tokenizer = transformers.AutoTokenizer.from_pretrained(args.load_path)
     elif args.load_path is None: # load pre-trained huggingface model
         model = getattr(models, args.model)(
-        args.model_name_or_path
+        args.model_name_or_path, args.lora_dim, args.lora_alpha, args.lora_dropout
         )
+        print("Layer: transformer.h.21.attn.c_attn.lora_A.weight")
+        print(model.state_dict()["transformer.h.21.attn.c_attn.lora_A.weight"])
         model.eval()
         tokenizer = transformers.AutoTokenizer.from_pretrained(args.model_name_or_path)
     else: # load checkpoint of model without LoRA 

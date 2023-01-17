@@ -1,5 +1,3 @@
-# this code comes from: Fair and Argumentative Language Modeling for Computational Argumentation by Carolin Holtermann, Anne Lauscher, Simone Ponzetto
-
 import re
 import random
 import nltk
@@ -32,7 +30,6 @@ def main():
                         help="The output train file")
     args = parser.parse_args()
 
-    #dataset = load_dataset("text", data_files=args.input_file, split='train', cache_dir='cda_cache')
 
     df = pd.read_table(args.input_file, names=['text'])
     print("read into df")

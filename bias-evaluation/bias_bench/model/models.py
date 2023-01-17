@@ -83,7 +83,27 @@ class LoRAGPT2Model:
         checkpoint = prepare_weights(checkpoint)
         model.load_state_dict(checkpoint, strict=False)
         return model
-
+    
+class LoRAptGPT2Model:
+    def __new__(self, model_name_or_path,lora_dim,lora_alpha, lora_dropout):
+        model = transformers.GPT2Model.from_pretrained(model_name_or_path)
+        model = convert_gpt2_attention_to_lora(
+            model, r=lora_dim, lora_alpha=lora_alpha, lora_dropout=lora_dropout,
+            enable_lora=[True, False, True], merge_weights=False
+        )
+        mark_only_lora_as_trainable(model)
+        return model 
+    
+class LoRAptGPT2LMHeadModel:
+    def __new__(self, model_name_or_path,lora_dim,lora_alpha, lora_dropout):
+        model = transformers.GPT2LMHeadModel.from_pretrained(model_name_or_path)
+        model = convert_gpt2_attention_to_lora(
+            model, r=lora_dim, lora_alpha=lora_alpha, lora_dropout=lora_dropout,
+            enable_lora=[True, False, True], merge_weights=False
+        )
+        mark_only_lora_as_trainable(model)
+        return model 
+    
 class LoRAGPT2LMHeadModel:
     def __new__(self, model_name_or_path, load_path,lora_dim, lora_alpha, lora_dropout):
         model = transformers.GPT2LMHeadModel.from_pretrained(model_name_or_path)

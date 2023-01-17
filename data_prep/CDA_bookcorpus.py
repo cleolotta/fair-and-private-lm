@@ -1,3 +1,4 @@
+#Adapted from the code of Lauscher et al. (2021) Sustainable modular debiasing of language models (https://aclanthology.org/2021.findings-emnlp.411/)
 from datasets import load_dataset
 import re
 import argparse
@@ -10,7 +11,6 @@ if __name__ == '__main__':
                         type=str,
                         required=True,
                         help="The output for the counterfactual augmented dataset for the book corpus.")
-
     parser.add_argument("--skip_sentences",
                         type=int,
                         required=True,
@@ -34,7 +34,6 @@ if __name__ == '__main__':
 
     # open the output text file to append sentence by sentence
     with open(args.output_file,'a+', encoding='utf-8') as f:
-
 
 # ---------------------------------------------BOOKCORPUS---------------------------------------------
         print("Create list of sentences of bookcorpus...")

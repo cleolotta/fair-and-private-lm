@@ -54,7 +54,6 @@ def get_gender_word_pairs():
         word_pairs = []
         # https://github.com/uclanlp/corefBias/blob/master/WinoBias/wino/generalized_swaps.txt
         # creates list with word pairs --> [ [pair1[0], pair1[1]] , [pair2[0], pair2[1]] , ... ]
-        #file_wordlist = open('/ukp-storage-1/matzken/fplm/datasets/wordpairs/cda_word_pairs_gender.txt', 'r', encoding="utf-8") 
         file_wordlist = open('./data_prep/data/wordpairs/cda_word_pairs_gender.txt', 'r', encoding="utf-8") 
         
         lines_wordlist = file_wordlist.readlines()

@@ -7,7 +7,7 @@ import re
 
 import numpy as np
 import sys
-sys.path.append('./bias-bench-main')
+sys.path.append('./bias-evaluation')
 from bias_bench.benchmark.stereoset import dataloader
 
 
