@@ -1,8 +1,12 @@
 # Fair and private language models
 
-This repository contains the code for my master thesis entitled "Trade-Offs Between Privacy and Fairness in Language Models", written at the Technical University of Darmstadt.
-The aim of the work was to investigate the influence of debiasing on leakage and the influence of differential privacy on gender bias in GPT-2.
-The repository is divided as follows:
+This repository contains the code for our article accepted for publication at the Findings of the 61th
+Annual Meeting of the Association for Computational Linguistics (Findings of ACL 2023): [Trade-Offs Between Privacy and Fairness in Language Models](https://arxiv.org/pdf/2305.14936.pdf).
+
+> **Abstract**: 
+>Protecting privacy in contemporary NLP models is gaining in importance. So does the need to mitigate social biases of such models. But can we have both at the same time? Existing research suggests that privacy preservation comes at the price of worsening biases in classification tasks. In this paper, we explore the extent to which this tradeoff really holds when we incorporate both privacy preservation and debiasing techniques into training text generation models. How does improving the model along one dimension affect the other dimension as well as the utility of the model? We conduct an extensive set of experiments that include bias detection, privacy attacks, language modeling, and performance on downstream tasks.
+
+
 
 ### bias-evaluation
 This folder contains the code to evaluate the models for a gender bias. The frameworks are SEAT (May et al., 2019), StereoSet (Nadeem et al.,) and BEC-Pro (Bartl et al., 2020).
