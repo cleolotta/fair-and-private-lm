@@ -6,14 +6,24 @@ Annual Meeting of the Association for Computational Linguistics (Findings of ACL
 > **Abstract**: 
 >Protecting privacy in contemporary NLP models is gaining in importance. So does the need to mitigate social biases of such models. But can we have both at the same time? Existing research suggests that privacy preservation comes at the price of worsening biases in classification tasks. In this paper, we explore the extent to which this tradeoff really holds when we incorporate both privacy preservation and debiasing techniques into training text generation models. How does improving the model along one dimension affect the other dimension as well as the utility of the model? We conduct an extensive set of experiments that include bias detection, privacy attacks, language modeling, and performance on downstream tasks.
 
+## Usage
+The focus of this work was to train different models with either debiasing, privacy, or both objectives and evaluate the privacy and/or bias in the resulting models.
+
+The order of execution of our code is therefore 
+1. Creating the dataset in data_prep
+2. Training the models and perform membership inference attacks in code
+3. Evaluate the models for bias in experiments
+
 
 
 ### bias-evaluation
 This folder contains the code to evaluate the models for a gender bias. The frameworks are SEAT (May et al., 2019), StereoSet (Nadeem et al.,) and BEC-Pro (Bartl et al., 2020).
-##### Sources
+
+
+
+##### Sources of our work:
 
 SEAT:
-
 @article{may2019measuring,
   title={On measuring social biases in sentence encoders},
   author={May, Chandler and Wang, Alex and Bordia, Shikha and Bowman, Samuel R and Rudinger, Rachel},
@@ -22,7 +32,6 @@ SEAT:
 }
 
 StereoSet:
-
 @article{nadeem2020stereoset,
   title={Stereoset: Measuring stereotypical bias in pretrained language models},
   author={Nadeem, Moin and Bethke, Anna and Reddy, Siva},
@@ -31,7 +40,6 @@ StereoSet:
 }
 
 BEC-Pro:
-
 @article{bartl2020unmasking,
   title={Unmasking contextual stereotypes: Measuring and mitigating BERT's gender bias},
   author={Bartl, Marion and Nissim, Malvina and Gatt, Albert},
@@ -40,7 +48,6 @@ BEC-Pro:
 }
 
 SEAT and StereoSet code:
-
 @article{meade2021empirical,
   title={An empirical survey of the effectiveness of debiasing techniques for pre-trained language models},
   author={Meade, Nicholas and Poole-Dayan, Elinor and Reddy, Siva},
