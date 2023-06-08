@@ -11,9 +11,9 @@ The focus of this work was to train different models with either debiasing, priv
 
 The order of execution of our code is therefore 
 1. Creating the dataset in [data_prep](https://github.com/cleolotta/fair-and-private-lm/tree/main/data_prep)
-2. Training the models and perform membership inference attacks in **code**
-3. Evaluate the models for bias and language modeling ability in **bias-evaluation**
-4. Evaluate the downstream performance in **glue**
+2. Training the models and perform membership inference attacks in [code](https://github.com/cleolotta/fair-and-private-lm/tree/main/code)
+3. Evaluate the models for bias and language modeling ability in [bias-evaluation](https://github.com/cleolotta/fair-and-private-lm/tree/main/bias-evaluation)
+4. Evaluate the downstream performance in [glue](https://github.com/cleolotta/fair-and-private-lm/tree/main/glue)
 
 Each folder contains a description and instructions on how to use the included codes.
 
