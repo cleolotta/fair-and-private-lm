@@ -10,8 +10,8 @@ Annual Meeting of the Association for Computational Linguistics (Findings of ACL
 The focus of this work was to train different models with either debiasing, privacy, or both objectives and evaluate the privacy and/or bias in the resulting models. We further evaluated the language modeling ability and performance on downstream tasks.
 
 The order of execution of our code is therefore 
-1. Creating the dataset in [data_prep](https://github.com/cleolotta/fair-and-private-lm/tree/main/data_prep)
-2. Training the models and perform membership inference attacks in [code](https://github.com/cleolotta/fair-and-private-lm/tree/main/code)
+1. Create the dataset in [data_prep](https://github.com/cleolotta/fair-and-private-lm/tree/main/data_prep)
+2. Train the models and perform membership inference attacks in [code](https://github.com/cleolotta/fair-and-private-lm/tree/main/code)
 3. Evaluate the models for bias and language modeling ability in [bias-evaluation](https://github.com/cleolotta/fair-and-private-lm/tree/main/bias-evaluation)
 4. Evaluate the downstream performance in [glue](https://github.com/cleolotta/fair-and-private-lm/tree/main/glue)
 
