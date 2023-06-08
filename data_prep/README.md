@@ -1,7 +1,7 @@
 # Data Preparation
 This folder contains the code used to prepare the dataset as subset of the bookcorpus.
 
-The code is taken and modified from:
+Most of the code in this section is taken and modified from Lauscher et al. (2021):
 https://aclanthology.org/2021.findings-emnlp.411/
 
 
