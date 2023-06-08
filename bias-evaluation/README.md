@@ -4,6 +4,8 @@ This folder contains the code to evaluate language models for a gender bias. The
 
 ## Example of Usage
 
+E.g., evaluate a GPT-2 that was trained with DP: 
+
 ##### BEC-Pro
 Run BEC-Pro with:
 
@@ -25,7 +27,7 @@ python bias-evaluation/experiments/stereoset_evaluation.py --predictions_file "[
 ##### SEAT
 Run SEAT-tests with:
 ```angular2html
-python bias-evaluation/experiments/seat_debias.py --tests sent-weat6 sent-weat6b sent-weat7 sent-weat7b sent-weat8 sent-weat8b --parametric --model_name_or_path "gpt2-medium" --load_path "[path_to_model]" --model "LoRAGPT2Model" --objective "cda_lora"
+python bias-evaluation/experiments/seat_debias.py --tests sent-weat6 sent-weat6b sent-weat7 sent-weat7b sent-weat8 sent-weat8b --parametric --model_name_or_path "gpt2-medium" --load_path "[path_to_model]" --model "DOLoRAGPT2Model" --objective "dp_lora"
 ```
 
 
