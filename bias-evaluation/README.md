@@ -5,7 +5,7 @@ This folder contains the code to evaluate language models for a gender bias. The
 ## Example of Usage
 
 ##### BEC-Pro
-E.g., run BEC-Pro:
+Run BEC-Pro with:
 
 ```angular2html
 python ./bias-evaluation/experiments/bec-pro.py --model_name_or_path gpt2-medium --load_path "[path_to_model]" --model "DPLoRAGPT2LMHeadModel" --objective "dp_lora"
