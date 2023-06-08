@@ -1,6 +1,6 @@
 # Language Modelling
 
-This folder contains the code to run the causal language modeling and to perform membership inference attack
+This folder contains the code to run the causal language modeling and to perform membership inference attack. The modified run_clm.py from Huggingface is taken from: https://github.com/mireshghallah/ft-memorization
 
 ## Example of Usage
 
