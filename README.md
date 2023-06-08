@@ -4,6 +4,7 @@ This repository contains the code for our article accepted for publication at th
 Annual Meeting of the Association for Computational Linguistics (Findings of ACL 2023): [Trade-Offs Between Privacy and Fairness in Language Models](https://arxiv.org/pdf/2305.14936.pdf).
 
 > **Abstract**: 
+>
 >Protecting privacy in contemporary NLP models is gaining in importance. So does the need to mitigate social biases of such models. But can we have both at the same time? Existing research suggests that privacy preservation comes at the price of worsening biases in classification tasks. In this paper, we explore the extent to which this tradeoff really holds when we incorporate both privacy preservation and debiasing techniques into training text generation models. How does improving the model along one dimension affect the other dimension as well as the utility of the model? We conduct an extensive set of experiments that include bias detection, privacy attacks, language modeling, and performance on downstream tasks.
 
 ## File Structure and usage
