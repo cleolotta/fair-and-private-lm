@@ -16,3 +16,13 @@ The order of execution of our code is therefore
 4. Evaluate the downstream performance in [glue](https://github.com/cleolotta/fair-and-private-lm/tree/main/glue)
 
 Each folder contains a description and instructions on how to use the included codes.
+
+
+@article{matzken2023trade,
+  title="Trade-Offs Between Fairness and Privacy in Language Modeling",
+  author="Matzken, Cleo and Eger, Steffen and Habernal, Ivan",
+  journal="Findings of the Association for Computational Linguistics: ACL 2023",
+  year = "2023",
+  url = "https://arxiv.org/abs/2305.14936",
+  note = "accepted"
+}
