@@ -17,7 +17,7 @@ The order of execution of our code is therefore
 
 Each folder contains a description and instructions on how to use the included codes.
 
-
+```bigquery
 @article{matzken2023trade,
   title="Trade-Offs Between Fairness and Privacy in Language Modeling",
   author="Matzken, Cleo and Eger, Steffen and Habernal, Ivan",
@@ -26,3 +26,5 @@ Each folder contains a description and instructions on how to use the included c
   url = "https://arxiv.org/abs/2305.14936",
   note = "accepted"
 }
+```
+
